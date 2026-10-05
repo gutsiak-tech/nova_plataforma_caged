@@ -2,21 +2,33 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { GOLD_COLUMNS } from '../api/goldColumns'
 import { GOLD_TABLES } from '../api/goldTables'
 import { fetchOverview, fetchTable } from '../api/gold'
-import type { OverviewResponse, Scope, TableResponse } from '../api/types'
+import type {
+  OverviewResponse,
+  SalaryMovement,
+  Scope,
+  TableResponse,
+} from '../api/types'
 import { BarRank } from '../components/charts/BarRank'
 import { CategoricalHeatmap } from '../components/charts/CategoricalHeatmap'
 import { DataGrid } from '../components/table/DataGrid'
 import { ChartCard } from '../components/ui/ChartCard'
 import { ChartTablePanel, TableToggleButton } from '../components/ui/ChartTableToggle'
 import { ErrorState } from '../components/ui/ErrorState'
+import { EmptyState } from '../components/ui/EmptyState'
 import { LoadingState } from '../components/ui/LoadingState'
 import { PageHeader } from '../components/ui/PageHeader'
 import { useScope } from '../context/ScopeContext'
 import { useMonth } from '../context/MonthContext'
 import { chartTheme } from '../lib/chartTheme'
-import { formatCurrencyBRL, labelScope } from '../lib/format'
+import { formatCurrencyBRL, formatInt, labelScope } from '../lib/format'
 import { buildRequestContextKey, responseMatchesRequest } from '../lib/requestContext'
-import { getTerritorialSalaryMedian } from '../lib/salarySummary'
+import {
+  DEFAULT_SALARY_MOVEMENT,
+  getTerritorialSalarySummary,
+  SALARY_METHODOLOGY,
+  salaryColumnsForDisplay,
+  salaryMovementLabel,
+} from '../lib/salarySummary'
 import { theme } from '../lib/theme'
 import { useContextPayload } from '../lib/useContextPayload'
 import { useScopeStableLoading } from '../lib/useScopeStableLoading'
@@ -63,9 +75,9 @@ function tableCacheKey(
   scope: Scope,
   ano: number,
   mes: number,
-  opts?: { limit?: number; sort_by?: string },
+  opts?: { limit?: number; sort_by?: string; movimento?: SalaryMovement },
 ): string {
-  return `${baseName}:${scope}:${ano}:${mes}:${opts?.limit ?? ''}:${opts?.sort_by ?? ''}`
+  return `${baseName}:${scope}:${ano}:${mes}:${opts?.limit ?? ''}:${opts?.sort_by ?? ''}:${opts?.movimento ?? ''}`
 }
 
 function fetchOverviewCached(
@@ -73,11 +85,12 @@ function fetchOverviewCached(
   scope: Scope,
   ano: number,
   mes: number,
+  movimento: SalaryMovement,
 ): Promise<OverviewResponse> {
-  const key = overviewCacheKey(scope, ano, mes)
+  const key = `${overviewCacheKey(scope, ano, mes)}:${movimento}`
   const existing = cache.get(key)
   if (existing) return existing
-  const request = fetchOverview(scope, ano, mes).catch((err: unknown) => {
+  const request = fetchOverview(scope, ano, mes, movimento).catch((err: unknown) => {
     cache.delete(key)
     throw err
   })
@@ -91,7 +104,7 @@ function fetchTableCached(
   scope: Scope,
   ano: number,
   mes: number,
-  opts?: { limit?: number; sort_by?: string },
+  opts?: { limit?: number; sort_by?: string; movimento?: SalaryMovement },
 ): Promise<TableResponse> {
   const key = tableCacheKey(baseName, scope, ano, mes, opts)
   const existing = cache.get(key)
@@ -104,9 +117,55 @@ function fetchTableCached(
   return request
 }
 
+function SalaryMovementToggle({
+  movement,
+  onChange,
+}: {
+  movement: SalaryMovement
+  onChange: (movement: SalaryMovement) => void
+}) {
+  const options: SalaryMovement[] = ['admissao', 'desligamento']
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-2">
+      <span className={theme.selector.labelClass}>Movimento</span>
+      <div
+        className={theme.selector.containerClass}
+        role="group"
+        aria-label="Selecionar movimento salarial"
+      >
+        {options.map((option) => {
+          const active = option === movement
+          return (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(option)}
+              className={[
+                theme.selector.toggleButtonBaseClass,
+                active
+                  ? theme.selector.toggleButtonActiveClass
+                  : theme.selector.toggleButtonInactiveClass,
+              ].join(' ')}
+            >
+              {salaryMovementLabel(option)}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function SalaryPage() {
   const { scope } = useScope()
   const { ano, mes, label } = useMonth()
+  const [movement, setMovement] = useState<SalaryMovement>(DEFAULT_SALARY_MOVEMENT)
+  const movementRef = useRef(movement)
+  const changeMovement = useCallback((next: SalaryMovement) => {
+    movementRef.current = next
+    setMovement(next)
+  }, [])
   const requestKey = buildRequestContextKey(scope, ano, mes)
   const {
     data: payload,
@@ -121,7 +180,9 @@ export function SalaryPage() {
     clear: clearError,
   } = useContextPayload<string>(requestKey)
   const [retryKey, setRetryKey] = useState(0)
-  const { beginFetch, endFetch, shellClass, showInitialLoader } = useScopeStableLoading(ov)
+  const currentOverview = ov?.salary_summary?.movement === movement ? ov : null
+  const { beginFetch, endFetch, shellClass, showInitialLoader } =
+    useScopeStableLoading(currentOverview)
   const [tableOpen, setTableOpen] = useState({
     sexo: false,
     faixa: false,
@@ -136,18 +197,25 @@ export function SalaryPage() {
   useEffect(() => {
     overviewCacheRef.current.clear()
     tableCacheRef.current.clear()
-  }, [scope, ano, mes, retryKey])
+  }, [scope, ano, mes, movement, retryKey])
 
   const loadOptionalTable = useCallback(
     (slot: OptionalTableSlot) => {
       const capturedKey = requestKey
+      const capturedMovement = movement
       const cfg = OPTIONAL_TABLE_CONFIG[slot]
       fetchTableCached(tableCacheRef.current, cfg.base, scope, ano, mes, {
         limit: cfg.limit,
+        movimento: movement,
         ...TABLE_SORT,
       })
         .then((data) => {
-          if (!responseMatchesRequest(data, capturedKey)) return
+          if (
+            movementRef.current !== capturedMovement ||
+            !responseMatchesRequest(data, capturedKey)
+          ) {
+            return
+          }
           updatePayload(capturedKey, (current) => ({
             ...current,
             tables: { ...current.tables, [slot]: data },
@@ -157,7 +225,7 @@ export function SalaryPage() {
           // Tabela opcional do painel — falha não derruba a página.
         })
     },
-    [scope, ano, mes, requestKey, updatePayload],
+    [scope, ano, mes, movement, requestKey, updatePayload],
   )
 
   const toggleOptionalTable = useCallback(
@@ -175,12 +243,13 @@ export function SalaryPage() {
     let c = false
     const isCancelled = () => c
     const capturedKey = requestKey
+    const capturedMovement = movement
     beginFetch(isCancelled, () => {
       clearError(capturedKey)
     })
-    const heatmapOpts = { limit: HEATMAP_LIMIT, ...TABLE_SORT }
+    const heatmapOpts = { limit: HEATMAP_LIMIT, movimento: movement, ...TABLE_SORT }
     Promise.all([
-      fetchOverviewCached(overviewCacheRef.current, scope, ano, mes),
+      fetchOverviewCached(overviewCacheRef.current, scope, ano, mes, movement),
       fetchTableCached(
         tableCacheRef.current,
         HEATMAP_TABLE_CONFIG.sx_fx.base,
@@ -207,7 +276,7 @@ export function SalaryPage() {
       ),
     ])
       .then(([o, sxFx, sxIns, fxIns]) => {
-        if (c) return
+        if (c || movementRef.current !== capturedMovement) return
         if (
           ![o, sxFx, sxIns, fxIns].every((response) =>
             responseMatchesRequest(response, capturedKey),
@@ -237,6 +306,7 @@ export function SalaryPage() {
     scope,
     ano,
     mes,
+    movement,
     requestKey,
     retryKey,
     beginFetch,
@@ -249,69 +319,108 @@ export function SalaryPage() {
   if (err) {
     return <ErrorState message={err} onRetry={() => setRetryKey((k) => k + 1)} />
   }
-  if (showInitialLoader || !ov) {
+  if (showInitialLoader || !currentOverview) {
     return <LoadingState label="Carregando indicadores de salário..." />
   }
 
-  const territorialMedian = getTerritorialSalaryMedian(ov)
+  const territorialSummary = getTerritorialSalarySummary(currentOverview, movement)
+  const movementLabel = salaryMovementLabel(movement)
+  const pageHeader = (
+    <PageHeader
+      eyebrow="Salários"
+      title={`Remuneração · ${labelScope(scope)}`}
+      subtitle={`Competência ${label}. ${SALARY_METHODOLOGY}`}
+      action={<SalaryMovementToggle movement={movement} onChange={changeMovement} />}
+    />
+  )
+
+  if (!territorialSummary) {
+    return (
+      <div className={['space-y-10', shellClass].filter(Boolean).join(' ')}>
+        {pageHeader}
+        <EmptyState
+          title="Indicadores salariais institucionais indisponíveis"
+          description="A competência selecionada ainda não possui Gold salarial separada por movimento. Dados legados não são reutilizados como fallback."
+        />
+      </div>
+    )
+  }
 
   return (
     <div className={['space-y-10', shellClass].filter(Boolean).join(' ')}>
-      <PageHeader
-        eyebrow="Salários"
-        title={`Remuneração · ${labelScope(scope)}`}
-        subtitle={`Competência ${label}. Estatísticas derivadas da camada Gold (média, mediana, quartis). Valores extremos podem distorcer médias — use mediana e quartis para leitura robusta.`}
-      />
+      {pageHeader}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3">
         <div className={theme.kpiTile.baseClass}>
-          <p className={theme.kpiTile.labelClass}>Mediana salarial</p>
+          <p className={theme.kpiTile.labelClass}>N elegível · {movementLabel}</p>
           <p
             className={[theme.kpiTile.valueClass, theme.kpiTile.toneNeutral].join(' ')}
-            aria-label={`Mediana salarial: ${formatCurrencyBRL(territorialMedian)}`}
+            aria-label={`Vínculos elegíveis: ${formatInt(territorialSummary.n)}`}
           >
-            {formatCurrencyBRL(territorialMedian)}
+            {formatInt(territorialSummary.n)}
           </p>
-          <p className={theme.kpiTile.hintClass}>Mediana salarial no recorte selecionado.</p>
+          <p className={theme.kpiTile.hintClass}>População após a metodologia institucional.</p>
         </div>
-        <div className="lg:col-span-2">
-          <ChartCard
-            title="Saldo vs salário médio (sexo)"
-            subtitle="Comparação por sexo usando salário médio (referência do mês selecionado)."
-            hover={false}
-            action={
-              <TableToggleButton open={tableOpen.sexo} onToggle={() => toggleOptionalTable('sexo')} />
-            }
+        <div className={theme.kpiTile.baseClass}>
+          <p className={theme.kpiTile.labelClass}>Salário médio nominal · {movementLabel}</p>
+          <p
+            className={[theme.kpiTile.valueClass, theme.kpiTile.toneNeutral].join(' ')}
+            aria-label={`Salário médio nominal: ${formatCurrencyBRL(territorialSummary.mean)}`}
           >
-            <BarRank
-              rows={ov.salary_profiles[GOLD_COLUMNS.SEXO]}
-              labelKey={GOLD_COLUMNS.SEXO}
-              valueKey={GOLD_COLUMNS.SALARIO_MEDIO}
-              color={palette.salary.primary}
-              highlightTop1
-            />
-            {tableOpen.sexo ? (
-              <ChartTablePanel open={tableOpen.sexo}>
-                {tables.sexo ? (
-                  <DataGrid columns={tables.sexo.columns} rows={tables.sexo.rows} />
-                ) : null}
-              </ChartTablePanel>
-            ) : null}
-          </ChartCard>
+            {formatCurrencyBRL(territorialSummary.mean)}
+          </p>
+          <p className={theme.kpiTile.hintClass}>Média nominal do recorte selecionado.</p>
+        </div>
+        <div className={theme.kpiTile.baseClass}>
+          <p className={theme.kpiTile.labelClass}>Salário mediano nominal · {movementLabel}</p>
+          <p
+            className={[theme.kpiTile.valueClass, theme.kpiTile.toneNeutral].join(' ')}
+            aria-label={`Salário mediano nominal: ${formatCurrencyBRL(territorialSummary.median)}`}
+          >
+            {formatCurrencyBRL(territorialSummary.median)}
+          </p>
+          <p className={theme.kpiTile.hintClass}>Mediana territorial calculada diretamente.</p>
         </div>
       </div>
 
+      <ChartCard
+        title={`Salário médio nominal por sexo · ${movementLabel}`}
+        subtitle="Comparação por sexo na população salarial elegível."
+        hover={false}
+        action={
+          <TableToggleButton open={tableOpen.sexo} onToggle={() => toggleOptionalTable('sexo')} />
+        }
+      >
+        <BarRank
+          rows={currentOverview.salary_profiles[GOLD_COLUMNS.SEXO]}
+          labelKey={GOLD_COLUMNS.SEXO}
+          valueKey={GOLD_COLUMNS.SALARIO_MEDIO}
+          color={palette.salary.primary}
+          highlightTop1
+        />
+        {tableOpen.sexo ? (
+          <ChartTablePanel open={tableOpen.sexo}>
+            {tables.sexo ? (
+              <DataGrid
+                columns={salaryColumnsForDisplay(tables.sexo.columns)}
+                rows={tables.sexo.rows}
+              />
+            ) : null}
+          </ChartTablePanel>
+        ) : null}
+      </ChartCard>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <ChartCard
-          title="Faixa etária — salário médio"
-          subtitle="Ranking por faixa etária usando salário médio (mês selecionado)."
+          title={`Faixa etária — salário médio nominal · ${movementLabel}`}
+          subtitle="Ranking por faixa etária na população salarial elegível."
           hover={false}
           action={
             <TableToggleButton open={tableOpen.faixa} onToggle={() => toggleOptionalTable('faixa')} />
           }
         >
           <BarRank
-            rows={ov.salary_profiles[GOLD_COLUMNS.FAIXA_ETARIA]}
+            rows={currentOverview.salary_profiles[GOLD_COLUMNS.FAIXA_ETARIA]}
             labelKey={GOLD_COLUMNS.FAIXA_ETARIA}
             valueKey={GOLD_COLUMNS.SALARIO_MEDIO}
             color={palette.salary.secondary}
@@ -321,7 +430,7 @@ export function SalaryPage() {
             <ChartTablePanel open={tableOpen.faixa}>
               {tables.faixa ? (
                 <DataGrid
-                  columns={tables.faixa.columns}
+                  columns={salaryColumnsForDisplay(tables.faixa.columns)}
                   rows={tables.faixa.rows}
                   maxHeightClass="max-h-[480px]"
                 />
@@ -330,8 +439,8 @@ export function SalaryPage() {
           ) : null}
         </ChartCard>
         <ChartCard
-          title="Instrução — salário médio"
-          subtitle="Ranking por escolaridade usando salário médio (mês selecionado)."
+          title={`Instrução — salário médio nominal · ${movementLabel}`}
+          subtitle="Ranking por escolaridade na população salarial elegível."
           hover={false}
           action={
             <TableToggleButton
@@ -341,7 +450,7 @@ export function SalaryPage() {
           }
         >
           <BarRank
-            rows={ov.salary_profiles[GOLD_COLUMNS.GRAUDEINSTRUCAO]}
+            rows={currentOverview.salary_profiles[GOLD_COLUMNS.GRAUDEINSTRUCAO]}
             labelKey={GOLD_COLUMNS.GRAUDEINSTRUCAO}
             valueKey={GOLD_COLUMNS.SALARIO_MEDIO}
             color={palette.salary.average}
@@ -351,7 +460,7 @@ export function SalaryPage() {
             <ChartTablePanel open={tableOpen.instrucao}>
               {tables.instrucao ? (
                 <DataGrid
-                  columns={tables.instrucao.columns}
+                  columns={salaryColumnsForDisplay(tables.instrucao.columns)}
                   rows={tables.instrucao.rows}
                   maxHeightClass="max-h-[480px]"
                 />
@@ -364,8 +473,8 @@ export function SalaryPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         {tables.sx_fx ? (
           <ChartCard
-            title="Sexo × faixa etária"
-            subtitle="Intensidade por salário médio em cada combinação."
+            title={`Sexo × faixa etária · ${movementLabel}`}
+            subtitle="Intensidade por salário mediano nominal em cada combinação."
             hover={false}
             action={
               <TableToggleButton
@@ -380,10 +489,12 @@ export function SalaryPage() {
               colKey={GOLD_COLUMNS.FAIXA_ETARIA}
               rowAxisLabel="Sexo"
               colAxisLabel="Faixa etária"
+              valueKey={GOLD_COLUMNS.SALARIO_MEDIANO}
+              valueLabel="Salário mediano nominal"
             />
             <ChartTablePanel open={tableOpen.sx_fx}>
               <DataGrid
-                columns={tables.sx_fx.columns}
+                columns={salaryColumnsForDisplay(tables.sx_fx.columns)}
                 rows={tables.sx_fx.rows}
                 maxHeightClass="max-h-[480px]"
               />
@@ -393,8 +504,8 @@ export function SalaryPage() {
 
         {tables.sx_ins ? (
           <ChartCard
-            title="Sexo × instrução"
-            subtitle="Intensidade por salário médio em cada combinação."
+            title={`Sexo × instrução · ${movementLabel}`}
+            subtitle="Intensidade por salário mediano nominal em cada combinação."
             hover={false}
             action={
               <TableToggleButton
@@ -409,11 +520,13 @@ export function SalaryPage() {
               colKey={GOLD_COLUMNS.GRAUDEINSTRUCAO}
               rowAxisLabel="Sexo"
               colAxisLabel="Instrução"
+              valueKey={GOLD_COLUMNS.SALARIO_MEDIANO}
+              valueLabel="Salário mediano nominal"
               wide
             />
             <ChartTablePanel open={tableOpen.sx_ins}>
               <DataGrid
-                columns={tables.sx_ins.columns}
+                columns={salaryColumnsForDisplay(tables.sx_ins.columns)}
                 rows={tables.sx_ins.rows}
                 maxHeightClass="max-h-[480px]"
               />
@@ -424,8 +537,8 @@ export function SalaryPage() {
 
       {tables.fx_ins ? (
         <ChartCard
-          title="Faixa etária × instrução"
-          subtitle="Matriz ampla — intensidade por salário médio em cada combinação."
+          title={`Faixa etária × instrução · ${movementLabel}`}
+          subtitle="Matriz ampla — intensidade por salário mediano nominal em cada combinação."
           hover={false}
           action={
             <TableToggleButton
@@ -440,11 +553,13 @@ export function SalaryPage() {
             colKey={GOLD_COLUMNS.GRAUDEINSTRUCAO}
             rowAxisLabel="Faixa etária"
             colAxisLabel="Instrução"
+            valueKey={GOLD_COLUMNS.SALARIO_MEDIANO}
+            valueLabel="Salário mediano nominal"
             wide
           />
           <ChartTablePanel open={tableOpen.fx_ins}>
             <DataGrid
-              columns={tables.fx_ins.columns}
+              columns={salaryColumnsForDisplay(tables.fx_ins.columns)}
               rows={tables.fx_ins.rows}
               maxHeightClass="max-h-[480px]"
             />

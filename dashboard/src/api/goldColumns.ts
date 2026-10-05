@@ -11,6 +11,7 @@ export const GOLD_COLUMNS = {
   SEXO: 'sexo',
   FAIXA_ETARIA: 'faixa_etaria',
   GRAUDEINSTRUCAO: 'graudeinstrucao',
+  MOVIMENTO: 'movimento',
   SALARIO_MEDIO: 'salario_medio',
   SALARIO_MEDIANO: 'salario_mediano',
   SALARIO_P25: 'salario_p25',

@@ -1,4 +1,5 @@
 export type Scope = 'br' | 'pr' | 'rmc'
+export type SalaryMovement = 'admissao' | 'desligamento'
 
 export type GoldRow = Record<string, unknown>
 
@@ -30,6 +31,9 @@ export type OverviewResponse = {
   scope: Scope
   resumo: GoldRow | null
   salary_summary: {
+    movement: SalaryMovement
+    n: number | null
+    mean: number | null
     median: number | null
   }
   rankings: {

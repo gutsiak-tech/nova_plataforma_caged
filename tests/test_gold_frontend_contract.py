@@ -26,6 +26,7 @@ MOVEMENT_COLUMNS = frozenset({"admissoes", "desligamentos", "saldo"})
 
 SALARY_COLUMNS = frozenset(
     {
+        "movimento",
         "n_salarios_validos",
         "salario_medio",
         "salario_mediano",
@@ -108,6 +109,7 @@ MIN_GOLD_COLUMNS = frozenset(
         "sexo",
         "faixa_etaria",
         "graudeinstrucao",
+        "movimento",
         "salario_medio",
         "salario_mediano",
         "salario_p25",

@@ -36,6 +36,7 @@ def _silver_columns() -> dict:
         "graudeinstrucao": ["7", "7", "7"],
         "salario": [2000.0, 2000.0, 2000.0],
         "valorsalariofixo": [2000.0, 2000.0, 2000.0],
+        "indtrabintermitente": ["Não", "Não", "Não"],
     }
 
 

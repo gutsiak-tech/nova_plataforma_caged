@@ -385,14 +385,36 @@ def test_overview_exposes_territorial_salary_median(monkeypatch, tmp_path, scope
     month_dir = setup(gold_root)
     suffix = "" if scope == "br" else f"_{scope}"
     pd.DataFrame(
-        {"n_salarios_validos": [5], "salario_mediano": [expected]}
+        {
+            "movimento": ["admissao", "desligamento"],
+            "n_salarios_validos": [5, 4],
+            "salario_medio": [expected + 100, expected + 200],
+            "salario_mediano": [expected, expected + 50],
+        }
     ).to_csv(month_dir / f"tabela_resumo_salario{suffix}.csv", index=False)
     _patch_gold_root(monkeypatch, gold_root)
 
     response = client.get(f"/api/gold/v1/overview?scope={scope}&ano=2026&mes=2")
 
     assert response.status_code == 200
-    assert response.json()["salary_summary"] == {"median": expected}
+    assert response.json()["salary_summary"] == {
+        "movement": "admissao",
+        "n": 5,
+        "mean": expected + 100,
+        "median": expected,
+    }
+
+    termination = client.get(
+        f"/api/gold/v1/overview?scope={scope}&ano=2026&mes=2"
+        "&movimento=desligamento"
+    )
+    assert termination.status_code == 200
+    assert termination.json()["salary_summary"] == {
+        "movement": "desligamento",
+        "n": 4,
+        "mean": expected + 200,
+        "median": expected + 50,
+    }
 
 
 def test_overview_does_not_fallback_to_first_sex_group_median(monkeypatch, tmp_path):
@@ -410,7 +432,84 @@ def test_overview_does_not_fallback_to_first_sex_group_median(monkeypatch, tmp_p
     response = client.get("/api/gold/v1/overview?scope=br&ano=2026&mes=2")
 
     assert response.status_code == 200
-    assert response.json()["salary_summary"] == {"median": None}
+    assert response.json()["salary_summary"] == {
+        "movement": "admissao",
+        "n": None,
+        "mean": None,
+        "median": None,
+    }
+
+
+def test_salary_profiles_and_table_are_filtered_by_movement(monkeypatch, tmp_path):
+    gold_root = tmp_path / "gold" / "caged"
+    month_dir = _setup_overview_br_gold(gold_root)
+    rows = pd.DataFrame(
+        [
+            {
+                "movimento": "admissao",
+                "sexo": "Mulher",
+                "saldo": 10,
+                "salario_medio": 2000.0,
+            },
+            {
+                "movimento": "desligamento",
+                "sexo": "Homem",
+                "saldo": -8,
+                "salario_medio": 2500.0,
+            },
+        ]
+    )
+    rows.to_csv(month_dir / "tabela_perfil_sexo_salario.csv", index=False)
+    pd.DataFrame(
+        {
+            "movimento": ["admissao", "desligamento"],
+            "n_salarios_validos": [10, 8],
+            "salario_medio": [2000.0, 2500.0],
+            "salario_mediano": [1900.0, 2400.0],
+        }
+    ).to_csv(month_dir / "tabela_resumo_salario.csv", index=False)
+    _patch_gold_root(monkeypatch, gold_root)
+
+    overview_response = client.get(
+        "/api/gold/v1/overview?scope=br&ano=2026&mes=2&movimento=desligamento"
+    )
+    table_response = client.get(
+        "/api/gold/v1/table/tabela_perfil_sexo_salario"
+        "?scope=br&ano=2026&mes=2&movimento=admissao"
+    )
+
+    assert overview_response.status_code == 200
+    assert overview_response.json()["salary_profiles"]["sexo"] == [
+        {
+            "movimento": "desligamento",
+            "sexo": "Homem",
+            "saldo": -8,
+            "salario_medio": 2500.0,
+        }
+    ]
+    assert table_response.status_code == 200
+    assert table_response.json()["total"] == 1
+    assert table_response.json()["rows"][0]["movimento"] == "admissao"
+
+
+def test_legacy_salary_table_returns_no_rows_for_institutional_filter(
+    monkeypatch, tmp_path
+):
+    gold_root = tmp_path / "gold" / "caged"
+    month_dir = _setup_overview_br_gold(gold_root)
+    pd.DataFrame(
+        [{"sexo": "Mulher", "saldo": 10, "salario_medio": 2000.0}]
+    ).to_csv(month_dir / "tabela_perfil_sexo_salario.csv", index=False)
+    _patch_gold_root(monkeypatch, gold_root)
+
+    response = client.get(
+        "/api/gold/v1/table/tabela_perfil_sexo_salario"
+        "?scope=br&ano=2026&mes=2&movimento=admissao"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
+    assert response.json()["rows"] == []
 
 
 def test_overview_pr_emits_no_missing_resumo_error_log(monkeypatch, tmp_path, caplog):

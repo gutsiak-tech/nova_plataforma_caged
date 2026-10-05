@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query
 
@@ -38,6 +38,8 @@ from app.services.gold_service import (
 router = APIRouter(prefix="/api/gold/v1", tags=["gold"])
 logger = setup_logger("api.gold", API_LOG_FILE)
 
+SalaryMovement = Literal["admissao", "desligamento"]
+
 
 def _parse_scope(scope: str) -> Scope:
     scope = (scope or "").strip().lower()
@@ -49,6 +51,28 @@ def _parse_scope(scope: str) -> Scope:
         {"scope": scope},
         status_code=400,
     )
+
+
+def _parse_salary_movement(movement: str) -> SalaryMovement:
+    normalized = (movement or "").strip().lower()
+    if normalized in ("admissao", "desligamento"):
+        return normalized  # type: ignore[return-value]
+    raise_gold_api_error(
+        "INVALID_SALARY_MOVEMENT",
+        "movimento salarial inválido. Use: admissao | desligamento",
+        {"movimento": movement},
+        status_code=400,
+    )
+
+
+def _filter_salary_movement(
+    df: pd.DataFrame,
+    movement: SalaryMovement,
+) -> pd.DataFrame:
+    if "movimento" not in df.columns:
+        return df.iloc[0:0].copy()
+    values = df["movimento"].astype("string").str.strip().str.lower()
+    return df.loc[values.eq(movement)].copy()
 
 
 def _resolve_month(ano: int | None, mes: int | None) -> GoldMonthRef:
@@ -134,8 +158,11 @@ def _top_rows(
     scope: Scope,
     sort_by: str = "saldo",
     limit: int = 12,
+    movement: SalaryMovement | None = None,
 ):
     df = read_gold_table(month, base_name=base_name, scope=scope)
+    if movement is not None:
+        df = _filter_salary_movement(df, movement)
     if sort_by not in df.columns:
         numeric_cols = [
             c
@@ -249,6 +276,7 @@ def table(
     scope: str = Query("br"),
     ano: int | None = Query(None),
     mes: int | None = Query(None),
+    movimento: str | None = Query(None),
     limit: int = Query(50, ge=1, le=2000),
     offset: int = Query(0, ge=0),
     sort_by: str | None = None,
@@ -274,6 +302,16 @@ def table(
         if not competencia_is_available(month):
             raise _competencia_error_from_month(month) from exc
         raise _table_not_found_error(month, base_name, sc, path) from exc
+
+    if movimento is not None:
+        if "salario" not in base_name:
+            raise GoldAPIError(
+                "INVALID_SALARY_MOVEMENT",
+                "O filtro movimento só pode ser usado em tabelas salariais.",
+                {"table": base_name, "movimento": movimento},
+                status_code=400,
+            )
+        df = _filter_salary_movement(df, _parse_salary_movement(movimento))
 
     try:
         return {
@@ -307,8 +345,10 @@ def overview(
     scope: str = Query("br"),
     ano: int | None = Query(None),
     mes: int | None = Query(None),
+    movimento: str = Query("admissao"),
 ):
     sc = _parse_scope(scope)
+    salary_movement = _parse_salary_movement(movimento)
     month = _resolve_month(ano, mes)
     _ensure_competencia(month)
 
@@ -362,14 +402,31 @@ def overview(
             else {"admissoes": 0.0, "desligamentos": 0.0, "saldo": 0.0}
         )
 
-    def _safe_top_rows(base_name: str, *, limit: int = 12):
+    def _safe_top_rows(
+        base_name: str,
+        *,
+        limit: int = 12,
+        salary: bool = False,
+    ):
         try:
-            return _top_rows(base_name, month=month, scope=sc, limit=limit)
+            return _top_rows(
+                base_name,
+                month=month,
+                scope=sc,
+                limit=limit,
+                movement=salary_movement if salary else None,
+            )
         except FileNotFoundError as exc:
             path = get_table_csv_path(month, base_name=base_name, scope=sc)
             raise _table_not_found_error(month, base_name, sc, path) from exc
 
-    def _territorial_salary_median() -> float | None:
+    def _territorial_salary_summary() -> dict[str, Any]:
+        unavailable = {
+            "movement": salary_movement,
+            "n": None,
+            "mean": None,
+            "median": None,
+        }
         try:
             summary = read_gold_table(
                 month,
@@ -377,19 +434,37 @@ def overview(
                 scope=sc,
             )
         except FileNotFoundError:
-            return None
-        if "salario_mediano" not in summary.columns or summary.empty:
-            return None
-        values = pd.to_numeric(summary["salario_mediano"], errors="coerce").dropna()
-        return float(values.iloc[0]) if len(values) else None
+            return unavailable
+        required = {
+            "movimento",
+            "n_salarios_validos",
+            "salario_medio",
+            "salario_mediano",
+        }
+        if not required.issubset(summary.columns):
+            return unavailable
+        selected = _filter_salary_movement(summary, salary_movement)
+        if selected.empty:
+            return unavailable
+        row = selected.iloc[0]
+
+        def _number(column: str) -> float | None:
+            value = pd.to_numeric(pd.Series([row[column]]), errors="coerce").iloc[0]
+            return float(value) if pd.notna(value) else None
+
+        n_value = _number("n_salarios_validos")
+        return {
+            "movement": salary_movement,
+            "n": int(n_value) if n_value is not None else None,
+            "mean": _number("salario_medio"),
+            "median": _number("salario_mediano"),
+        }
 
     payload = {
         "month": {"ano": month.ano, "mes": month.mes},
         "scope": sc,
         "resumo": resumo_row,
-        "salary_summary": {
-            "median": _territorial_salary_median(),
-        },
+        "salary_summary": _territorial_salary_summary(),
         "rankings": {
             "uf": _safe_top_rows("tabela_uf", limit=12) if sc == "br" else None,
             "municipio": _safe_top_rows("tabela_municipio", limit=15),
@@ -407,15 +482,17 @@ def overview(
             ),
         },
         "salary_profiles": {
-            "sexo": _safe_top_rows("tabela_perfil_sexo_salario", limit=10),
-            "faixa_etaria": _safe_top_rows("tabela_perfil_faixa_etaria_salario", limit=20),
-            "graudeinstrucao": _safe_top_rows("tabela_perfil_graudeinstrucao_salario", limit=20),
+            "sexo": _safe_top_rows("tabela_perfil_sexo_salario", limit=10, salary=True),
+            "faixa_etaria": _safe_top_rows("tabela_perfil_faixa_etaria_salario", limit=20, salary=True),
+            "graudeinstrucao": _safe_top_rows("tabela_perfil_graudeinstrucao_salario", limit=20, salary=True),
             "sexo_faixa_etaria": _safe_top_rows(
-                "tabela_perfil_sexo_faixa_etaria_salario", limit=24
+                "tabela_perfil_sexo_faixa_etaria_salario", limit=24, salary=True
             ),
-            "sexo_instrucao": _safe_top_rows("tabela_perfil_sexo_instrucao_salario", limit=24),
+            "sexo_instrucao": _safe_top_rows(
+                "tabela_perfil_sexo_instrucao_salario", limit=24, salary=True
+            ),
             "faixa_etaria_instrucao": _safe_top_rows(
-                "tabela_perfil_faixa_etaria_instrucao_salario", limit=24
+                "tabela_perfil_faixa_etaria_instrucao_salario", limit=24, salary=True
             ),
         },
     }

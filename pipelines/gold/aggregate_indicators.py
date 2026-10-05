@@ -8,12 +8,17 @@ from app.core.config import GOLD_CAGED_DIR, SILVER_CAGED_DIR, DEFAULT_ANO, DEFAU
 from app.core.logging import setup_logger
 from app.core.config import PIPELINE_LOG_FILE
 from pipelines.common.utils import ensure_dir
+from pipelines.common.salary_minimum import get_minimum_wage_parameter
 from pipelines.gold.validate_gold import (
     GoldOutputValidationResult,
     SilverInputValidationResult,
     ensure_silver_input_valid,
     validate_silver_input_for_gold,
     validate_and_publish_gold,
+)
+from pipelines.gold.salary_eligibility import (
+    SALARY_MOVEMENTS,
+    eligible_salary_population,
 )
 
 logger = setup_logger("gold", PIPELINE_LOG_FILE)
@@ -202,8 +207,8 @@ def agregar_resumo_salario(
     salario_col: str = "salario",
 ) -> pd.DataFrame:
     """Calcula a mediana diretamente sobre o universo territorial recebido."""
-    columns = ["n_salarios_validos", "salario_mediano"]
-    if df.empty or salario_col not in df.columns:
+    columns = ["n_salarios_validos", "salario_medio", "salario_mediano"]
+    if salario_col not in df.columns:
         return pd.DataFrame(columns=columns)
 
     salarios = df[salario_col]
@@ -211,10 +216,47 @@ def agregar_resumo_salario(
         [
             {
                 "n_salarios_validos": int(salarios.notna().sum()),
+                "salario_medio": salarios.mean(),
                 "salario_mediano": salarios.median(),
             }
         ]
     )
+
+
+def agregar_perfil_salario_institucional(
+    df: pd.DataFrame,
+    ano: int,
+    group_cols: list[str],
+) -> pd.DataFrame:
+    """Agrega perfis separados usando a única regra salarial elegível."""
+    frames: list[pd.DataFrame] = []
+    for movimento in SALARY_MOVEMENTS:
+        population = eligible_salary_population(df, ano, movimento)
+        aggregated = agregar_movimentacao_salario(population, group_cols)
+        if aggregated.empty:
+            continue
+        aggregated.insert(0, "movimento", movimento)
+        frames.append(aggregated)
+
+    if not frames:
+        return pd.DataFrame(
+            columns=["movimento", *group_cols, "admissoes", "desligamentos", "saldo"]
+        )
+    return pd.concat(frames, ignore_index=True)
+
+
+def agregar_resumo_salario_institucional(
+    df: pd.DataFrame,
+    ano: int,
+) -> pd.DataFrame:
+    """Calcula média e mediana territoriais diretamente para cada movimento."""
+    frames: list[pd.DataFrame] = []
+    for movimento in SALARY_MOVEMENTS:
+        population = eligible_salary_population(df, ano, movimento)
+        summary = agregar_resumo_salario(population)
+        summary.insert(0, "movimento", movimento)
+        frames.append(summary)
+    return pd.concat(frames, ignore_index=True)
 
 
 def salvar_se_nao_vazia(df: pd.DataFrame, output_dir: Path, nome_arquivo: str) -> None:
@@ -264,6 +306,7 @@ def publicar_tabelas_gold(
 def run_aggregate_indicators(ano: int = DEFAULT_ANO, mes: int = DEFAULT_MES) -> None:
     logger.info(f"[GOLD] Iniciando | ano={ano} mes={mes}")
 
+    get_minimum_wage_parameter(ano)
     silver_input = ensure_silver_input_valid(validate_silver_input_for_gold(ano, mes))
 
     silver_file = silver_mes_dir(ano, mes) / "caged_tratado.parquet"
@@ -363,58 +406,58 @@ def run_aggregate_indicators(ano: int = DEFAULT_ANO, mes: int = DEFAULT_MES) -> 
     # -----------------------------------------------------
     # Perfis com salário
     # -----------------------------------------------------
-    tabela_perfil_sexo_salario = agregar_movimentacao_salario(df, ["sexo"]) if "sexo" in df.columns else pd.DataFrame()
-    tabela_perfil_sexo_salario_pr = agregar_movimentacao_salario(df_pr, ["sexo"]) if "sexo" in df_pr.columns else pd.DataFrame()
-    tabela_perfil_sexo_salario_rmc = agregar_movimentacao_salario(df_rmc, ["sexo"]) if "sexo" in df_rmc.columns else pd.DataFrame()
+    tabela_perfil_sexo_salario = agregar_perfil_salario_institucional(df, ano, ["sexo"]) if "sexo" in df.columns else pd.DataFrame()
+    tabela_perfil_sexo_salario_pr = agregar_perfil_salario_institucional(df_pr, ano, ["sexo"]) if "sexo" in df_pr.columns else pd.DataFrame()
+    tabela_perfil_sexo_salario_rmc = agregar_perfil_salario_institucional(df_rmc, ano, ["sexo"]) if "sexo" in df_rmc.columns else pd.DataFrame()
 
-    tabela_perfil_faixa_etaria_salario = agregar_movimentacao_salario(df, ["faixa_etaria"]) if "faixa_etaria" in df.columns else pd.DataFrame()
-    tabela_perfil_faixa_etaria_salario_pr = agregar_movimentacao_salario(df_pr, ["faixa_etaria"]) if "faixa_etaria" in df_pr.columns else pd.DataFrame()
-    tabela_perfil_faixa_etaria_salario_rmc = agregar_movimentacao_salario(df_rmc, ["faixa_etaria"]) if "faixa_etaria" in df_rmc.columns else pd.DataFrame()
+    tabela_perfil_faixa_etaria_salario = agregar_perfil_salario_institucional(df, ano, ["faixa_etaria"]) if "faixa_etaria" in df.columns else pd.DataFrame()
+    tabela_perfil_faixa_etaria_salario_pr = agregar_perfil_salario_institucional(df_pr, ano, ["faixa_etaria"]) if "faixa_etaria" in df_pr.columns else pd.DataFrame()
+    tabela_perfil_faixa_etaria_salario_rmc = agregar_perfil_salario_institucional(df_rmc, ano, ["faixa_etaria"]) if "faixa_etaria" in df_rmc.columns else pd.DataFrame()
 
-    tabela_perfil_graudeinstrucao_salario = agregar_movimentacao_salario(df, ["graudeinstrucao"]) if "graudeinstrucao" in df.columns else pd.DataFrame()
-    tabela_perfil_graudeinstrucao_salario_pr = agregar_movimentacao_salario(df_pr, ["graudeinstrucao"]) if "graudeinstrucao" in df_pr.columns else pd.DataFrame()
-    tabela_perfil_graudeinstrucao_salario_rmc = agregar_movimentacao_salario(df_rmc, ["graudeinstrucao"]) if "graudeinstrucao" in df_rmc.columns else pd.DataFrame()
+    tabela_perfil_graudeinstrucao_salario = agregar_perfil_salario_institucional(df, ano, ["graudeinstrucao"]) if "graudeinstrucao" in df.columns else pd.DataFrame()
+    tabela_perfil_graudeinstrucao_salario_pr = agregar_perfil_salario_institucional(df_pr, ano, ["graudeinstrucao"]) if "graudeinstrucao" in df_pr.columns else pd.DataFrame()
+    tabela_perfil_graudeinstrucao_salario_rmc = agregar_perfil_salario_institucional(df_rmc, ano, ["graudeinstrucao"]) if "graudeinstrucao" in df_rmc.columns else pd.DataFrame()
 
-    tabela_resumo_salario = agregar_resumo_salario(df)
-    tabela_resumo_salario_pr = agregar_resumo_salario(df_pr)
-    tabela_resumo_salario_rmc = agregar_resumo_salario(df_rmc)
+    tabela_resumo_salario = agregar_resumo_salario_institucional(df, ano)
+    tabela_resumo_salario_pr = agregar_resumo_salario_institucional(df_pr, ano)
+    tabela_resumo_salario_rmc = agregar_resumo_salario_institucional(df_rmc, ano)
 
     tabela_perfil_sexo_faixa_etaria_salario = (
-        agregar_movimentacao_salario(df, ["sexo", "faixa_etaria"])
+        agregar_perfil_salario_institucional(df, ano, ["sexo", "faixa_etaria"])
         if {"sexo", "faixa_etaria"}.issubset(df.columns) else pd.DataFrame()
     )
     tabela_perfil_sexo_faixa_etaria_salario_pr = (
-        agregar_movimentacao_salario(df_pr, ["sexo", "faixa_etaria"])
+        agregar_perfil_salario_institucional(df_pr, ano, ["sexo", "faixa_etaria"])
         if {"sexo", "faixa_etaria"}.issubset(df_pr.columns) else pd.DataFrame()
     )
     tabela_perfil_sexo_faixa_etaria_salario_rmc = (
-        agregar_movimentacao_salario(df_rmc, ["sexo", "faixa_etaria"])
+        agregar_perfil_salario_institucional(df_rmc, ano, ["sexo", "faixa_etaria"])
         if {"sexo", "faixa_etaria"}.issubset(df_rmc.columns) else pd.DataFrame()
     )
 
     tabela_perfil_sexo_instrucao_salario = (
-        agregar_movimentacao_salario(df, ["sexo", "graudeinstrucao"])
+        agregar_perfil_salario_institucional(df, ano, ["sexo", "graudeinstrucao"])
         if {"sexo", "graudeinstrucao"}.issubset(df.columns) else pd.DataFrame()
     )
     tabela_perfil_sexo_instrucao_salario_pr = (
-        agregar_movimentacao_salario(df_pr, ["sexo", "graudeinstrucao"])
+        agregar_perfil_salario_institucional(df_pr, ano, ["sexo", "graudeinstrucao"])
         if {"sexo", "graudeinstrucao"}.issubset(df_pr.columns) else pd.DataFrame()
     )
     tabela_perfil_sexo_instrucao_salario_rmc = (
-        agregar_movimentacao_salario(df_rmc, ["sexo", "graudeinstrucao"])
+        agregar_perfil_salario_institucional(df_rmc, ano, ["sexo", "graudeinstrucao"])
         if {"sexo", "graudeinstrucao"}.issubset(df_rmc.columns) else pd.DataFrame()
     )
 
     tabela_perfil_faixa_etaria_instrucao_salario = (
-        agregar_movimentacao_salario(df, ["faixa_etaria", "graudeinstrucao"])
+        agregar_perfil_salario_institucional(df, ano, ["faixa_etaria", "graudeinstrucao"])
         if {"faixa_etaria", "graudeinstrucao"}.issubset(df.columns) else pd.DataFrame()
     )
     tabela_perfil_faixa_etaria_instrucao_salario_pr = (
-        agregar_movimentacao_salario(df_pr, ["faixa_etaria", "graudeinstrucao"])
+        agregar_perfil_salario_institucional(df_pr, ano, ["faixa_etaria", "graudeinstrucao"])
         if {"faixa_etaria", "graudeinstrucao"}.issubset(df_pr.columns) else pd.DataFrame()
     )
     tabela_perfil_faixa_etaria_instrucao_salario_rmc = (
-        agregar_movimentacao_salario(df_rmc, ["faixa_etaria", "graudeinstrucao"])
+        agregar_perfil_salario_institucional(df_rmc, ano, ["faixa_etaria", "graudeinstrucao"])
         if {"faixa_etaria", "graudeinstrucao"}.issubset(df_rmc.columns) else pd.DataFrame()
     )
 

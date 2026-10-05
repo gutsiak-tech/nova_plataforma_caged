@@ -8,6 +8,7 @@ import {
   heatmapCellKey,
   heatmapColor,
   heatmapValueRatio,
+  isSmallSalarySample,
   type HeatmapCell,
   type HeatmapData,
 } from '../../lib/categoricalHeatmap'
@@ -42,7 +43,7 @@ export function CategoricalHeatmap({
   rowAxisLabel,
   colAxisLabel,
   valueKey = HEATMAP_VALUE_KEY,
-  valueLabel = 'Salário médio',
+  valueLabel = 'Salário mediano nominal',
   wide = false,
 }: CategoricalHeatmapProps) {
   const data = useMemo(
@@ -111,6 +112,7 @@ export function CategoricalHeatmap({
               colLabels={data.colLabels}
               cellMap={cellMap}
               data={data}
+              valueLabel={valueLabel}
               onHover={setTooltip}
               onLeave={() => setTooltip(null)}
             />
@@ -131,6 +133,7 @@ export function CategoricalHeatmap({
               rowAxisLabel={rowAxisLabel}
               colAxisLabel={colAxisLabel}
               valueLabel={valueLabel}
+              valueKey={data.valueKey}
               x={tooltip.x}
               y={tooltip.y}
             />,
@@ -146,6 +149,7 @@ function HeatmapRow({
   colLabels,
   cellMap,
   data,
+  valueLabel,
   onHover,
   onLeave,
 }: {
@@ -153,6 +157,7 @@ function HeatmapRow({
   colLabels: string[]
   cellMap: Map<string, HeatmapCell>
   data: HeatmapData
+  valueLabel: string
   onHover: (t: TooltipState) => void
   onLeave: () => void
 }) {
@@ -179,7 +184,7 @@ function HeatmapRow({
             style={{ backgroundColor: fill }}
             aria-label={
               value !== null
-                ? `${row} × ${col}: salário médio ${formatCurrencyBRL(value)}`
+                ? `${row} × ${col}: ${valueLabel.toLowerCase()} ${formatCurrencyBRL(value)}`
                 : `${row} × ${col}: sem dado`
             }
             onMouseEnter={(e) => {
@@ -235,6 +240,7 @@ function HeatmapTooltip({
   rowAxisLabel,
   colAxisLabel,
   valueLabel,
+  valueKey,
   x,
   y,
 }: {
@@ -242,11 +248,15 @@ function HeatmapTooltip({
   rowAxisLabel: string
   colAxisLabel: string
   valueLabel: string
+  valueKey: string
   x: number
   y: number
 }) {
   const metrics = HEATMAP_TOOLTIP_METRICS.filter(
     (m) => cell.metrics[m.key] !== null && cell.metrics[m.key] !== undefined,
+  )
+  const smallSample = isSmallSalarySample(
+    cell.metrics[GOLD_COLUMNS.N_SALARIOS_VALIDOS],
   )
 
   return (
@@ -270,8 +280,8 @@ function HeatmapTooltip({
       <dl className="mt-2 space-y-1">
         {metrics.map((m) => (
           <div key={m.key} className="flex items-baseline justify-between gap-4">
-            <dt className={clsx('text-slate-400', m.key === HEATMAP_VALUE_KEY && 'text-cyan-300/90')}>
-              {m.key === HEATMAP_VALUE_KEY ? valueLabel : m.label}
+            <dt className={clsx('text-slate-400', m.key === valueKey && 'text-cyan-300/90')}>
+              {m.key === valueKey ? valueLabel : m.label}
             </dt>
             <dd
               className={clsx(
@@ -282,7 +292,7 @@ function HeatmapTooltip({
                 m.key === GOLD_COLUMNS.SALDO &&
                   Number(cell.metrics[GOLD_COLUMNS.SALDO]) > 0 &&
                   'text-emerald-300/90',
-                m.key === HEATMAP_VALUE_KEY && 'font-medium text-cyan-200',
+                m.key === valueKey && 'font-medium text-cyan-200',
               )}
             >
               {m.format(cell.metrics[m.key])}
@@ -290,6 +300,11 @@ function HeatmapTooltip({
           </div>
         ))}
       </dl>
+      {smallSample ? (
+        <p className="mt-2 text-[10px] font-medium text-amber-300">
+          Amostra pequena (N &lt; 30)
+        </p>
+      ) : null}
     </div>
   )
 }

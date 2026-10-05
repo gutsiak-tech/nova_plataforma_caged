@@ -30,7 +30,8 @@ const FAIXA_ETARIA_ORDER = [
 
 const SEXO_ORDER = ['Mulher', 'Homem']
 
-export const HEATMAP_VALUE_KEY = GOLD_COLUMNS.SALARIO_MEDIO
+export const HEATMAP_VALUE_KEY = GOLD_COLUMNS.SALARIO_MEDIANO
+export const SMALL_SAMPLE_THRESHOLD = 30
 
 export const HEATMAP_TOOLTIP_METRICS: {
   key: string
@@ -40,14 +41,17 @@ export const HEATMAP_TOOLTIP_METRICS: {
   { key: GOLD_COLUMNS.SALDO, label: 'Saldo', format: formatSignedInt },
   { key: GOLD_COLUMNS.ADMISSOES, label: 'Admissões', format: formatInt },
   { key: GOLD_COLUMNS.DESLIGAMENTOS, label: 'Desligamentos', format: formatInt },
-  { key: GOLD_COLUMNS.SALARIO_MEDIO, label: 'Salário médio', format: formatCurrencyBRL },
-  { key: GOLD_COLUMNS.SALARIO_MEDIANO, label: 'Salário mediano', format: formatCurrencyBRL },
-  { key: GOLD_COLUMNS.N_SALARIOS_VALIDOS, label: 'Salários válidos', format: formatInt },
-  { key: GOLD_COLUMNS.SALARIO_P25, label: 'P25', format: formatCurrencyBRL },
-  { key: GOLD_COLUMNS.SALARIO_P75, label: 'P75', format: formatCurrencyBRL },
-  { key: GOLD_COLUMNS.SALARIO_MIN, label: 'Mínimo', format: formatCurrencyBRL },
-  { key: GOLD_COLUMNS.SALARIO_MAX, label: 'Máximo', format: formatCurrencyBRL },
+  { key: GOLD_COLUMNS.SALARIO_MEDIANO, label: 'Salário mediano nominal', format: formatCurrencyBRL },
+  { key: GOLD_COLUMNS.SALARIO_MEDIO, label: 'Salário médio nominal', format: formatCurrencyBRL },
+  { key: GOLD_COLUMNS.N_SALARIOS_VALIDOS, label: 'N elegível', format: formatInt },
+  { key: GOLD_COLUMNS.SALARIO_P25, label: 'P25 nominal', format: formatCurrencyBRL },
+  { key: GOLD_COLUMNS.SALARIO_P75, label: 'P75 nominal', format: formatCurrencyBRL },
 ]
+
+export function isSmallSalarySample(value: unknown): boolean {
+  const n = Number(value)
+  return Number.isFinite(n) && n >= 0 && n < SMALL_SAMPLE_THRESHOLD
+}
 
 function sortLabels(key: string, labels: string[]): string[] {
   const unique = [...new Set(labels.filter(Boolean))]

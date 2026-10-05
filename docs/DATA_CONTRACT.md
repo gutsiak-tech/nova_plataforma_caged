@@ -188,12 +188,13 @@ Fonte: `dashboard/src/api/goldColumns.ts` → `GOLD_COLUMNS`.
 | `SEXO` | `sexo` | `ProfilesPage`, `SalaryPage`, heatmaps | `tabela_perfil_sexo*`, cruzamentos de perfil, tabelas `*_salario*` | Também chave em `profiles` / `salary_profiles` do overview. |
 | `FAIXA_ETARIA` | `faixa_etaria` | `ProfilesPage`, `SalaryPage`, `categoricalHeatmap.ts` | `tabela_perfil_faixa_etaria*`, cruzamentos, tabelas salariais | |
 | `GRAUDEINSTRUCAO` | `graudeinstrucao` | `ProfilesPage`, `SalaryPage`, heatmaps | `tabela_perfil_graudeinstrucao*`, cruzamentos, tabelas salariais | |
-| `SALARIO_MEDIO` | `salario_medio` | `SalaryPage`, `CategoricalHeatmap`, `categoricalHeatmap.ts` | Tabelas `*_salario` | `HEATMAP_VALUE_KEY` em `categoricalHeatmap.ts`. |
-| `SALARIO_MEDIANO` | `salario_mediano` | `SalaryPage` (KPI mediana) | Tabelas `*_salario` | |
+| `MOVIMENTO` | `movimento` | `SalaryPage` e API salarial | Tabelas `*_salario` | `admissao` ou `desligamento`. |
+| `SALARIO_MEDIO` | `salario_medio` | `SalaryPage` e tooltip dos heatmaps | Tabelas `*_salario` | Valor nominal. |
+| `SALARIO_MEDIANO` | `salario_mediano` | `SalaryPage` e intensidade dos heatmaps | Tabelas `*_salario` | Valor nominal; `HEATMAP_VALUE_KEY`. |
 | `SALARIO_P25` | `salario_p25` | Tooltips de heatmap (`HEATMAP_TOOLTIP_METRICS`) | Tabelas `*_salario` | |
 | `SALARIO_P75` | `salario_p75` | Idem | Tabelas `*_salario` | |
-| `SALARIO_MIN` | `salario_min` | Idem | Tabelas `*_salario` | |
-| `SALARIO_MAX` | `salario_max` | Idem | Tabelas `*_salario` | |
+| `SALARIO_MIN` | `salario_min` | Não exibido como indicador institucional | Tabelas `*_salario` | |
+| `SALARIO_MAX` | `salario_max` | Não exibido como indicador institucional | Tabelas `*_salario` | |
 | `N_SALARIOS_VALIDOS` | `n_salarios_validos` | Tooltips de heatmap | Tabelas `*_salario` | |
 
 ---
@@ -231,12 +232,21 @@ Origem Silver → Gold:
 
 ## 10. Contrato de salário
 
-Função: `agregar_movimentacao_salario(df, group_cols)` em `aggregate_indicators.py`.
+População: `eligible_salary_population(df, year, movement)` em `salary_eligibility.py`.
+
+- movimentos separados pelo sinal de `saldomovimentacao`;
+- `0,3 × salário mínimo <= salario <= 150 × salário mínimo`;
+- exclusão de `indtrabintermitente == "Sim"`;
+- sem reconversão de `salario` e sem filtro específico por unidade salarial;
+- valores monetários nominais.
+
+Agregação: `agregar_perfil_salario_institucional(df, ano, group_cols)` em `aggregate_indicators.py`.
 
 **Padrão de colunas de saída:**
 
 ```
-{dimensões de group_cols}
+movimento
+  + {dimensões de group_cols}
   + admissoes
   + desligamentos
   + saldo
@@ -249,7 +259,7 @@ Função: `agregar_movimentacao_salario(df, group_cols)` em `aggregate_indicator
   + salario_max
 ```
 
-Estatísticas salariais calculadas sobre a coluna Silver `salario` (default `salario_col="salario"`).
+`tabela_resumo_salario*` contém uma linha por movimento com `n_salarios_validos`, `salario_medio` e `salario_mediano`, calculados diretamente sobre o território.
 
 ### Exemplos
 
@@ -271,6 +281,12 @@ Tipo TypeScript: `OverviewResponse` em `dashboard/src/api/types.ts`.
   month: { ano: number; mes: number }
   scope: 'br' | 'pr' | 'rmc'
   resumo: GoldRow | null
+  salary_summary: {
+    movement: 'admissao' | 'desligamento'
+    n: number | null
+    mean: number | null
+    median: number | null
+  }
   rankings: {
     uf: GoldRow[] | null
     municipio: GoldRow[]
@@ -289,12 +305,13 @@ Tipo TypeScript: `OverviewResponse` em `dashboard/src/api/types.ts`.
 | `month` | Competência resolvida | Parâmetros `ano`/`mes` ou defaults de config |
 | `scope` | Recorte geográfico | Query `scope` |
 | `resumo` | KPI `{ admissoes, desligamentos, saldo }` | `tabela_resumo` (br), soma UF PR (pr), soma municípios RMC (rmc) |
+| `salary_summary` | N, média e mediana territoriais nominais do movimento solicitado | `tabela_resumo_salario*` |
 | `rankings.uf` | Top UFs por saldo | `tabela_uf` — **somente `scope=br`** |
 | `rankings.municipio` | Top municípios | `tabela_municipio` |
 | `rankings.setor` | Top setores | `tabela_setor` |
 | `rankings.ocupacao` | Top ocupações | `tabela_ocupacao` |
 | `profiles.*` | Séries de perfil (movimentação) | Tabelas `tabela_perfil_*` sem sufixo salário |
-| `salary_profiles.*` | Séries salariais | Tabelas `tabela_perfil_*_salario` |
+| `salary_profiles.*` | Séries salariais do movimento solicitado | Tabelas `tabela_perfil_*_salario` |
 
 **Contrato híbrido:** chaves como `rankings.uf`, `profiles.sexo` e `salary_profiles.sexo` são **campos da resposta JSON da API**, não colunas Gold literais. As linhas dentro desses arrays **são** registros Gold e devem conter as colunas documentadas nas seções 8–10.
 

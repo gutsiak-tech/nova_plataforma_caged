@@ -23,6 +23,7 @@ REQUIRED_SILVER_COLUMNS: tuple[str, ...] = (
     "graudeinstrucao",
     "salario",
     "valorsalariofixo",
+    "indtrabintermitente",
 )
 
 # Tabelas Gold mínimas para operação institucional e API.
