@@ -48,8 +48,8 @@ A implementação atual é **local**, com Python/pandas e arquivos no filesystem
 
 ### Ambiente de software
 
-- **Python 3** com ambiente virtual (dependências em `requirements.txt` e `requirements-dev.txt`)
-- **Node.js** e **npm** (dependências em `dashboard/package.json`)
+- **Python 3.11+** com ambiente virtual (dependências em `requirements.txt` e `requirements-dev.txt`)
+- **Node.js 20.19+** e **npm** (dependências em `dashboard/package.json`)
 - Editor de texto e terminal (PowerShell no Windows, ou equivalente em Linux/macOS)
 
 ### Dados
@@ -60,7 +60,7 @@ A implementação atual é **local**, com Python/pandas e arquivos no filesystem
 ### Configuração
 
 1. Copiar `.env.example` para `.env`
-2. Preencher `DEFAULT_ANO`, `DEFAULT_MES` e `DEFAULT_UF`
+2. Ajustar `DEFAULT_UF` se necessário. `DEFAULT_ANO` e `DEFAULT_MES` são um override opcional e devem ser definidos em conjunto apenas para fixar uma Gold válida; quando omitidos, o sistema usa a competência Gold válida mais recente. Override inválido deixa o `/ready` não pronto.
 3. Variáveis `POSTGRES_*` são opcionais (apenas para mapas/PostGIS, estágio separado)
 
 ### Procedimento mensal
@@ -176,7 +176,7 @@ Este modo **não** executa Bronze, Silver ou Gold.
 | Camada | O que verificar |
 |---|---|
 | Silver | `data-lake/silver/caged/ano=YYYY/mes=MM/caged_tratado.parquet` existe |
-| Gold | `data-lake/gold/caged/ano=YYYY/mes=MM/` com 47 CSV + 47 Parquet + 1 Excel |
+| Gold | `data-lake/gold/caged/ano=YYYY/mes=MM/` com 50 CSV + 50 Parquet + 1 Excel |
 | Catálogo | `data-lake/catalog/gold_catalog.json` atualizado (`generated_at` recente) |
 
 A API **prefere Parquet** na leitura das tabelas Gold e mantém **CSV como fallback** e formato institucional legível. Os endpoints e respostas JSON não mudam.
@@ -212,7 +212,11 @@ A nova competência deve aparecer em `/competencias` e retornar dados em `/overv
 python -m pytest tests/ -v
 ```
 
-No estado atual, a suíte possui **128 testes** automatizados.
+A contagem da suíte evolui com o projeto. Consulte o total atual com:
+
+```powershell
+python -m pytest tests/ --collect-only -q
+```
 
 ### Quando executar
 

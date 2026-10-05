@@ -52,10 +52,15 @@ Clone ou copie o repositório para a máquina da universidade.
 
 ### 3.2 Configurar ambiente
 
+Pré-requisitos: **Python 3.11+**, **Node.js 20.19+** e npm.
+
 ```powershell
 # Na raiz do projeto
 copy .env.example .env
-# Edite .env: DEFAULT_ANO, DEFAULT_MES, DEFAULT_UF (e APP_ENV/APP_VERSION se desejar)
+# Edite DEFAULT_UF e APP_ENV/APP_VERSION se necessário.
+# DEFAULT_ANO e DEFAULT_MES são um override opcional e devem ser usados juntos
+# somente para fixar uma competência Gold válida. Sem eles, usa-se a latest válida.
+# Override incompleto ou inválido deixa o /ready não pronto.
 
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1

@@ -59,7 +59,7 @@ microdados Novo CAGED
 |-------|--------|-----------|
 | `pipelines/gold/aggregate_indicators.py` | Define schema real de cada tabela Gold via `agregar_movimentacao()` e `agregar_movimentacao_salario()`. | Não documenta consumo por página; alteração aqui quebra API e front. |
 | `pipelines/gold/gold_contract.py` | Contrato operacional mínimo: `MIN_REQUIRED_GOLD_TABLES` (11 tabelas físicas), `TABELA_RESUMO_COLUMNS`, colunas Silver exigidas. | Subconjunto institucional; não cobre tabelas de perfil/salário usadas pelo dashboard. |
-| `app/services/gold_catalog_service.py` | `CURRENT_PIPELINE_TABLES` (47 nomes físicos com sufixos); gera/valida catálogo com colunas e dtypes. | Catálogo JSON em `data-lake/` (gitignored); não é consumido pelo front-end. |
+| `app/services/gold_catalog_service.py` | `CURRENT_PIPELINE_TABLES` (50 nomes físicos com sufixos); gera/valida catálogo com colunas e dtypes. | Catálogo JSON em `data-lake/` (gitignored); não é consumido pelo front-end. |
 | `app/api/routes_gold.py` | Contrato HTTP: endpoints, shape de `/overview`, lista hardcoded de tabelas internas. | Duplica lista de tabelas sem vínculo automático com `goldTables.ts`. |
 | `app/services/gold_service.py` | Resolução `base_name` + scope → `{base_name}{suffix}.csv/.parquet`; `BR_ONLY_TABLES`; competências via `tabela_resumo.csv`. | Não valida colunas mínimas por tabela. |
 | `dashboard/src/api/goldTables.ts` | 13 `base_name` usados em `fetchTable()`. | Não inclui tabelas consumidas apenas via `/overview`. |
@@ -373,7 +373,7 @@ Atualize `DATA_CONTRACT.md` sempre que:
 - **Sem geração automática** de tipos TypeScript a partir do catálogo.
 - **Sem testes front-end** — `dashboard/package.json` não define script `test`.
 - **`GOLD_COLUMNS.COMPETENCIA`** definida sem uso no código de páginas/componentes.
-- **`gold_contract.py`** cobre apenas 11 tabelas mínimas; pipeline gera 47 nomes físicos (`CURRENT_PIPELINE_TABLES`).
+- **`gold_contract.py`** cobre apenas 11 tabelas mínimas; pipeline gera 50 nomes físicos (`CURRENT_PIPELINE_TABLES`).
 
 ---
 

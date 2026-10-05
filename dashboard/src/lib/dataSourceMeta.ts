@@ -1,2 +1,2 @@
-/** Rótulo único da última atualização do pipeline Gold exibido no rodapé do dashboard. */
-export const DATA_PIPELINE_UPDATED_AT_LABEL = '28/05/2026 08:30'
+/** Rótulo institucional sem timestamp quando a API não fornece data autoritativa. */
+export const DATA_SOURCE_FOOTER_LABEL = 'Fonte: Novo CAGED · Dados com ajustes'

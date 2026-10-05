@@ -11,6 +11,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from app.core.config import GOLD_CAGED_DIR, PROJECT_ROOT
+from pipelines.gold.publication import is_valid_gold_competencia_dir
 
 CATALOG_DIR = PROJECT_ROOT / "data-lake" / "catalog"
 GOLD_CATALOG_JSON = CATALOG_DIR / "gold_catalog.json"
@@ -117,6 +118,8 @@ def list_gold_partitions(gold_root: Path | None = None) -> list[dict[str, Any]]:
                 continue
             mes = _parse_partition_value(mes_dir.name, "mes")
             if mes is None or not (1 <= mes <= 12):
+                continue
+            if not is_valid_gold_competencia_dir(mes_dir):
                 continue
 
             partitions.append(
@@ -650,7 +653,10 @@ def render_gold_catalog_markdown(catalog: dict[str, Any]) -> str:
                 + ", ".join(partition["missing_pipeline_tables"])
             )
         if not notes:
-            notes.append("CSV/Parquet alinhados com pipeline atual (47 tabelas).")
+            notes.append(
+                "CSV/Parquet alinhados com pipeline atual "
+                f"({len(CURRENT_PIPELINE_TABLES)} tabelas)."
+            )
         lines.append(
             "| {competencia} | {csv_count} | {parquet_count} | {excel_count} | {suspected} | {obs} |".format(
                 competencia=partition["competencia"],

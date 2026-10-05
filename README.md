@@ -30,7 +30,7 @@ O **CAGED Dashboard** analisa microdados do Novo CAGED e apresenta indicadores d
 
 O produto trabalha por **competência ano/mês**. A API aceita `ano` e `mes` nos endpoints Gold; o dashboard carrega competências disponíveis via `/api/gold/v1/competencias` e envia `ano`/`mes` em todas as consultas.
 
-No estado atual, o projeto está funcional com dados Gold para competências processadas (por exemplo, `2026-01` e `2026-02`).
+No estado atual, o projeto está funcional com dados Gold válidos para as competências `2026-02` a `2026-06`.
 
 ---
 
@@ -83,8 +83,8 @@ Uma migração futura para Databricks/Spark/Delta Lake é possível como evoluç
 
 ## 4. Pré-requisitos
 
-- **Python 3** com suporte a venv
-- **Node.js** e **npm** (para o dashboard)
+- **Python 3.11+** com suporte a venv
+- **Node.js 20.19+** e **npm** (para o dashboard)
 - Dependências Python listadas em [`requirements.txt`](requirements.txt) (ex.: `pandas==3.0.1`, `fastapi==0.135.3`, `uvicorn==0.43.0`)
 - Dependências de desenvolvimento em [`requirements-dev.txt`](requirements-dev.txt) (`pytest`, `httpx`)
 - Dependências do dashboard em [`dashboard/package.json`](dashboard/package.json)
@@ -401,7 +401,7 @@ Equivalente funcional a `--catalog-only`.
 | `columns` / `dtypes` | Schema |
 | `is_suspected_legacy` | Indica possível artefato legado |
 
-Cada competência processada pelo pipeline atual gera **47 tabelas** CSV + 47 Parquet + 1 Excel consolidado.
+Cada competência processada pelo pipeline atual gera **50 tabelas** CSV + 50 Parquet + 1 Excel consolidado.
 
 ---
 
@@ -411,7 +411,7 @@ Cada competência processada pelo pipeline atual gera **47 tabelas** CSV + 47 Pa
 GET /api/gold/v1/competencias
 ```
 
-Retorna competências válidas na Gold (diretórios com `tabela_resumo.csv`), incluindo `default` e `items` com `ano`, `mes`, `competencia` e `label`.
+Retorna somente competências Gold válidas segundo a regra institucional compartilhada: metadata parseável com `validation_status` aceitável e arquivos mínimos obrigatórios. A resposta inclui `default` e `items` com `ano`, `mes`, `competencia` e `label`.
 
 O dashboard consome esse endpoint no `MonthProvider` (`dashboard/src/context/MonthContext.tsx`) para montar o seletor de competência e propagar `ano`/`mes` às páginas.
 
@@ -419,7 +419,7 @@ O dashboard consome esse endpoint no `MonthProvider` (`dashboard/src/context/Mon
 
 - A competência é sincronizada com a query string **`?ano=&mes=`** na URL.
 - Também é gravada em **`localStorage`** (chave `caged-dashboard:last-competencia`).
-- Prioridade de resolução inicial: URL → localStorage → default da API → último item disponível → fallback local (ver `dashboard/src/lib/competenciaPersistence.ts`).
+- Prioridade de resolução inicial: URL → localStorage → default da API → competência válida mais recente da lista retornada (ver `dashboard/src/lib/competenciaPersistence.ts`).
 
 ---
 
