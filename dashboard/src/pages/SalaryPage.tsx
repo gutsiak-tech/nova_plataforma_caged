@@ -15,7 +15,9 @@ import { useScope } from '../context/ScopeContext'
 import { useMonth } from '../context/MonthContext'
 import { chartTheme } from '../lib/chartTheme'
 import { formatCurrencyBRL, labelScope } from '../lib/format'
+import { buildRequestContextKey, responseMatchesRequest } from '../lib/requestContext'
 import { theme } from '../lib/theme'
+import { useContextPayload } from '../lib/useContextPayload'
 import { useScopeStableLoading } from '../lib/useScopeStableLoading'
 
 const palette = chartTheme.palette
@@ -24,6 +26,10 @@ type OverviewCache = Map<string, Promise<OverviewResponse>>
 type TableCache = Map<string, Promise<TableResponse>>
 type OptionalTableSlot = 'sexo' | 'faixa' | 'instrucao'
 type HeatmapTableSlot = 'sx_fx' | 'sx_ins' | 'fx_ins'
+type SalaryPayload = {
+  overview: OverviewResponse
+  tables: Record<string, TableResponse | null>
+}
 
 const TABLE_SORT = { sort_by: GOLD_COLUMNS.SALDO } as const
 
@@ -100,9 +106,19 @@ function fetchTableCached(
 export function SalaryPage() {
   const { scope } = useScope()
   const { ano, mes, label } = useMonth()
-  const [ov, setOv] = useState<OverviewResponse | null>(null)
-  const [tables, setTables] = useState<Record<string, TableResponse | null>>({})
-  const [err, setErr] = useState<string | null>(null)
+  const requestKey = buildRequestContextKey(scope, ano, mes)
+  const {
+    data: payload,
+    commit: commitPayload,
+    update: updatePayload,
+  } = useContextPayload<SalaryPayload>(requestKey)
+  const ov = payload?.overview ?? null
+  const tables = payload?.tables ?? {}
+  const {
+    data: err,
+    commit: commitError,
+    clear: clearError,
+  } = useContextPayload<string>(requestKey)
   const [retryKey, setRetryKey] = useState(0)
   const { beginFetch, endFetch, shellClass, showInitialLoader } = useScopeStableLoading(ov)
   const [tableOpen, setTableOpen] = useState({
@@ -115,31 +131,32 @@ export function SalaryPage() {
   })
   const overviewCacheRef = useRef<OverviewCache>(new Map())
   const tableCacheRef = useRef<TableCache>(new Map())
-  const loadIdRef = useRef(0)
 
   useEffect(() => {
     overviewCacheRef.current.clear()
     tableCacheRef.current.clear()
-    loadIdRef.current += 1
   }, [scope, ano, mes, retryKey])
 
   const loadOptionalTable = useCallback(
     (slot: OptionalTableSlot) => {
-      const capturedLoadId = loadIdRef.current
+      const capturedKey = requestKey
       const cfg = OPTIONAL_TABLE_CONFIG[slot]
       fetchTableCached(tableCacheRef.current, cfg.base, scope, ano, mes, {
         limit: cfg.limit,
         ...TABLE_SORT,
       })
         .then((data) => {
-          if (capturedLoadId !== loadIdRef.current) return
-          setTables((prev) => ({ ...prev, [slot]: data }))
+          if (!responseMatchesRequest(data, capturedKey)) return
+          updatePayload(capturedKey, (current) => ({
+            ...current,
+            tables: { ...current.tables, [slot]: data },
+          }))
         })
         .catch(() => {
           // Tabela opcional do painel — falha não derruba a página.
         })
     },
-    [scope, ano, mes],
+    [scope, ano, mes, requestKey, updatePayload],
   )
 
   const toggleOptionalTable = useCallback(
@@ -156,8 +173,9 @@ export function SalaryPage() {
   useEffect(() => {
     let c = false
     const isCancelled = () => c
+    const capturedKey = requestKey
     beginFetch(isCancelled, () => {
-      setErr(null)
+      clearError(capturedKey)
     })
     const heatmapOpts = { limit: HEATMAP_LIMIT, ...TABLE_SORT }
     Promise.all([
@@ -189,15 +207,24 @@ export function SalaryPage() {
     ])
       .then(([o, sxFx, sxIns, fxIns]) => {
         if (c) return
-        setOv(o)
-        setTables({
-          sx_fx: sxFx,
-          sx_ins: sxIns,
-          fx_ins: fxIns,
+        if (
+          ![o, sxFx, sxIns, fxIns].every((response) =>
+            responseMatchesRequest(response, capturedKey),
+          )
+        ) {
+          return
+        }
+        commitPayload(capturedKey, {
+          overview: o,
+          tables: {
+            sx_fx: sxFx,
+            sx_ins: sxIns,
+            fx_ins: fxIns,
+          },
         })
       })
       .catch((e: unknown) => {
-        if (!c) setErr(e instanceof Error ? e.message : 'Erro')
+        if (!c) commitError(capturedKey, e instanceof Error ? e.message : 'Erro')
       })
       .finally(() => {
         if (!c) endFetch()
@@ -205,7 +232,18 @@ export function SalaryPage() {
     return () => {
       c = true
     }
-  }, [scope, ano, mes, retryKey, beginFetch, endFetch])
+  }, [
+    scope,
+    ano,
+    mes,
+    requestKey,
+    retryKey,
+    beginFetch,
+    endFetch,
+    clearError,
+    commitError,
+    commitPayload,
+  ])
 
   if (err) {
     return <ErrorState message={err} onRetry={() => setRetryKey((k) => k + 1)} />

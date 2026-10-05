@@ -18,6 +18,8 @@ import { useMonth } from '../context/MonthContext'
 import { chartTheme } from '../lib/chartTheme'
 import { TERRITORY_TABLE_LIMIT } from '../lib/apiLimits'
 import { formatInt, labelScope } from '../lib/format'
+import { buildRequestContextKey, responseMatchesRequest } from '../lib/requestContext'
+import { useContextPayload } from '../lib/useContextPayload'
 import { useScopeStableLoading } from '../lib/useScopeStableLoading'
 
 const palette = chartTheme.palette
@@ -27,9 +29,16 @@ const TERRITORY_SORT_DIR = 'desc' as const
 export function TerritoryPage() {
   const { scope } = useScope()
   const { ano, mes, label } = useMonth()
-  const [tbl, setTbl] = useState<TableResponse | null>(null)
-  const [ufRows, setUfRows] = useState<GoldRow[] | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  const requestKey = buildRequestContextKey(scope, ano, mes)
+  const ufRequestKey = buildRequestContextKey('br', ano, mes)
+  const { data: tbl, commit: commitTable } = useContextPayload<TableResponse>(requestKey)
+  const { data: ufRows, commit: commitUfRows } =
+    useContextPayload<GoldRow[]>(ufRequestKey)
+  const {
+    data: err,
+    commit: commitError,
+    clear: clearError,
+  } = useContextPayload<string>(requestKey)
   const [retryKey, setRetryKey] = useState(0)
   const [tableOpen, setTableOpen] = useState(false)
   const { beginFetch, endFetch, showInitialLoader } = useScopeStableLoading(tbl)
@@ -38,8 +47,9 @@ export function TerritoryPage() {
   useEffect(() => {
     let cancelled = false
     const isCancelled = () => cancelled
+    const capturedKey = requestKey
     beginFetch(isCancelled, () => {
-      setErr(null)
+      clearError(capturedKey)
     })
     fetchTable(GOLD_TABLES.MUNICIPIO, scope, ano, mes, {
       limit: TERRITORY_TABLE_LIMIT,
@@ -47,10 +57,14 @@ export function TerritoryPage() {
       sort_dir: TERRITORY_SORT_DIR,
     })
       .then((d) => {
-        if (!cancelled) setTbl(d)
+        if (!cancelled && responseMatchesRequest(d, capturedKey)) {
+          commitTable(capturedKey, d)
+        }
       })
       .catch((e: unknown) => {
-        if (!cancelled) setErr(e instanceof Error ? e.message : 'Erro')
+        if (!cancelled) {
+          commitError(capturedKey, e instanceof Error ? e.message : 'Erro')
+        }
       })
       .finally(() => {
         if (!cancelled) endFetch()
@@ -58,23 +72,37 @@ export function TerritoryPage() {
     return () => {
       cancelled = true
     }
-  }, [scope, ano, mes, retryKey, beginFetch, endFetch])
+  }, [
+    scope,
+    ano,
+    mes,
+    requestKey,
+    retryKey,
+    beginFetch,
+    endFetch,
+    clearError,
+    commitError,
+    commitTable,
+  ])
 
   useEffect(() => {
     if (scope !== 'br') return
 
     let cancelled = false
+    const capturedKey = ufRequestKey
     fetchTable(GOLD_TABLES.UF, 'br', ano, mes, { limit: 50 })
       .then((d) => {
-        if (!cancelled) setUfRows(d.rows)
+        if (!cancelled && responseMatchesRequest(d, capturedKey)) {
+          commitUfRows(capturedKey, d.rows)
+        }
       })
       .catch(() => {
-        if (!cancelled) setUfRows([])
+        if (!cancelled) commitUfRows(capturedKey, [])
       })
     return () => {
       cancelled = true
     }
-  }, [scope, ano, mes, retryKey])
+  }, [scope, ano, mes, ufRequestKey, retryKey, commitUfRows])
 
   if (err) {
     return <ErrorState message={err} onRetry={() => setRetryKey((k) => k + 1)} />

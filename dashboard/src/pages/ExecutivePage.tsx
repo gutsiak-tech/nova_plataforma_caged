@@ -15,6 +15,8 @@ import { useScope } from '../context/ScopeContext'
 import { useMonth } from '../context/MonthContext'
 import { chartTheme } from '../lib/chartTheme'
 import { formatCompact, labelScope } from '../lib/format'
+import { buildRequestContextKey, responseMatchesRequest } from '../lib/requestContext'
+import { useContextPayload } from '../lib/useContextPayload'
 import { useScopeStableLoading } from '../lib/useScopeStableLoading'
 import { theme } from '../lib/theme'
 
@@ -55,12 +57,6 @@ function fetchOverviewCached(
   return request
 }
 
-type ExecutiveKpiDisplay = {
-  resumo: GoldRow | null
-  prevResumo: GoldRow | null
-  previousLabel: string | null
-}
-
 function territoryLink(search: string) {
   return search ? `/territorio?${search}` : '/territorio'
 }
@@ -70,10 +66,22 @@ export function ExecutivePage() {
   const { ano, mes, label, previousCompetencia } = useMonth()
   const [searchParams] = useSearchParams()
   const search = searchParams.toString()
-  const [data, setData] = useState<OverviewResponse | null>(null)
-  const [kpiDisplay, setKpiDisplay] = useState<ExecutiveKpiDisplay | null>(null)
+  const requestKey = buildRequestContextKey(scope, ano, mes)
+  const previousRequestKey = previousCompetencia
+    ? buildRequestContextKey(scope, previousCompetencia.ano, previousCompetencia.mes)
+    : null
+  const { data, commit: commitCurrent } = useContextPayload<OverviewResponse>(requestKey)
+  const {
+    data: storedPreviousData,
+    commit: commitPrevious,
+  } = useContextPayload<OverviewResponse>(previousRequestKey ?? requestKey)
+  const {
+    data: err,
+    commit: commitError,
+    clear: clearError,
+  } = useContextPayload<string>(requestKey)
+  const previousData = previousRequestKey ? storedPreviousData : null
   const [compareBundle, setCompareBundle] = useState<CompareBundle | null>(null)
-  const [err, setErr] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
   const overviewCacheRef = useRef<OverviewCache>(new Map())
   const { beginFetch, endFetch, shellClass, showInitialLoader } = useScopeStableLoading(data)
@@ -89,8 +97,10 @@ export function ExecutivePage() {
   useEffect(() => {
     let cancel = false
     const isCancelled = () => cancel
+    const capturedKey = requestKey
+    const capturedPreviousKey = previousRequestKey
     beginFetch(isCancelled, () => {
-      setErr(null)
+      clearError(capturedKey)
     })
     const prev = previousCompetencia
     const cache = overviewCacheRef.current
@@ -101,16 +111,25 @@ export function ExecutivePage() {
     Promise.all(reqs)
       .then(([current, prevData]) => {
         if (cancel) return
-        const newPrevResumo = prev ? (prevData?.resumo ?? null) : null
-        setData(current)
-        setKpiDisplay({
-          resumo: current.resumo,
-          prevResumo: newPrevResumo,
-          previousLabel: prev?.label ?? null,
-        })
+        if (!responseMatchesRequest(current, capturedKey)) return
+        if (
+          capturedPreviousKey &&
+          (!prevData || !responseMatchesRequest(prevData, capturedPreviousKey))
+        ) {
+          return
+        }
+        commitCurrent(capturedKey, current)
+        if (capturedPreviousKey && prevData) {
+          commitPrevious(capturedPreviousKey, prevData)
+        }
       })
       .catch((e: unknown) => {
-        if (!cancel) setErr(e instanceof Error ? e.message : 'Falha ao carregar')
+        if (!cancel) {
+          commitError(
+            capturedKey,
+            e instanceof Error ? e.message : 'Falha ao carregar',
+          )
+        }
       })
       .finally(() => {
         if (!cancel) endFetch()
@@ -118,7 +137,21 @@ export function ExecutivePage() {
     return () => {
       cancel = true
     }
-  }, [scope, ano, mes, previousCompetencia, retryKey, beginFetch, endFetch])
+  }, [
+    scope,
+    ano,
+    mes,
+    previousCompetencia,
+    previousRequestKey,
+    requestKey,
+    retryKey,
+    beginFetch,
+    endFetch,
+    commitCurrent,
+    commitPrevious,
+    clearError,
+    commitError,
+  ])
 
   useEffect(() => {
     let cancel = false
@@ -127,6 +160,17 @@ export function ExecutivePage() {
     Promise.all(COMPARE_SCOPES.map((s) => fetchOverviewCached(cache, s, ano, mes)))
       .then((rows) => {
         if (cancel) return
+        if (
+          rows.some(
+            (row, index) =>
+              !responseMatchesRequest(
+                row,
+                buildRequestContextKey(COMPARE_SCOPES[index], ano, mes),
+              ),
+          )
+        ) {
+          return
+        }
         const next: Partial<Record<Scope, GoldRow | null>> = {}
         rows.forEach((r, i) => {
           next[COMPARE_SCOPES[i]] = r.resumo
@@ -145,12 +189,12 @@ export function ExecutivePage() {
     return <ErrorState message={err} onRetry={() => setRetryKey((k) => k + 1)} />
   }
 
-  if (showInitialLoader || !data || !kpiDisplay) {
+  if (showInitialLoader || !data || (previousRequestKey && !previousData)) {
     return <LoadingState label="Carregando visão executiva..." />
   }
 
-  const kpiPreviousLabel = kpiDisplay.previousLabel ?? undefined
-  const kpiHasCompare = kpiDisplay.previousLabel !== null
+  const kpiPreviousLabel = previousCompetencia?.label
+  const kpiHasCompare = previousCompetencia !== null
 
   return (
     <div className={[theme.executive.pageStack, shellClass].filter(Boolean).join(' ')}>
@@ -169,24 +213,24 @@ export function ExecutivePage() {
           variant="executive"
           executiveAccent="blue"
           label="Admissões"
-          value={kpiDisplay.resumo?.[GOLD_COLUMNS.ADMISSOES]}
-          prevValue={kpiHasCompare ? kpiDisplay.prevResumo?.[GOLD_COLUMNS.ADMISSOES] : undefined}
+          value={data.resumo?.[GOLD_COLUMNS.ADMISSOES]}
+          prevValue={kpiHasCompare ? previousData?.resumo?.[GOLD_COLUMNS.ADMISSOES] : undefined}
           previousLabel={kpiPreviousLabel}
         />
         <KpiStat
           variant="executive"
           executiveAccent="purple"
           label="Desligamentos"
-          value={kpiDisplay.resumo?.[GOLD_COLUMNS.DESLIGAMENTOS]}
-          prevValue={kpiHasCompare ? kpiDisplay.prevResumo?.[GOLD_COLUMNS.DESLIGAMENTOS] : undefined}
+          value={data.resumo?.[GOLD_COLUMNS.DESLIGAMENTOS]}
+          prevValue={kpiHasCompare ? previousData?.resumo?.[GOLD_COLUMNS.DESLIGAMENTOS] : undefined}
           previousLabel={kpiPreviousLabel}
         />
         <KpiStat
           variant="executive"
           executiveAccent="green"
           label="Saldo"
-          value={kpiDisplay.resumo?.[GOLD_COLUMNS.SALDO]}
-          prevValue={kpiHasCompare ? kpiDisplay.prevResumo?.[GOLD_COLUMNS.SALDO] : undefined}
+          value={data.resumo?.[GOLD_COLUMNS.SALDO]}
+          prevValue={kpiHasCompare ? previousData?.resumo?.[GOLD_COLUMNS.SALDO] : undefined}
           previousLabel={kpiPreviousLabel}
           valueToneFromDelta
         />

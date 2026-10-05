@@ -18,6 +18,13 @@ import { useMonth } from '../context/MonthContext'
 import { labelScope, shortCompetenciaLabel } from '../lib/format'
 import { chartTheme } from '../lib/chartTheme'
 import { buildPeriodDeltaData } from '../lib/periodDelta'
+import {
+  buildRequestContextKey,
+  comparisonPayloadsForContext,
+  responseMatchesRequest,
+  selectionExists,
+} from '../lib/requestContext'
+import { useContextPayload } from '../lib/useContextPayload'
 import { useScopeStableLoading } from '../lib/useScopeStableLoading'
 import { scheduleAsyncState } from '../lib/scheduleAsyncState'
 
@@ -26,11 +33,25 @@ const palette = chartTheme.palette
 export function OccupationPage() {
   const { scope } = useScope()
   const { ano, mes, label, previousCompetencia } = useMonth()
-  const [tbl, setTbl] = useState<TableResponse | null>(null)
-  const [tblPrevious, setTblPrevious] = useState<TableResponse | null>(null)
+  const requestKey = buildRequestContextKey(scope, ano, mes)
+  const previousRequestKey = previousCompetencia
+    ? buildRequestContextKey(scope, previousCompetencia.ano, previousCompetencia.mes)
+    : null
+  const { data: tbl, payload: tablePayload, commit: commitTable } =
+    useContextPayload<TableResponse>(requestKey)
+  const { payload: previousTablePayload, commit: commitPrevious } =
+    useContextPayload<TableResponse>(previousRequestKey ?? requestKey)
   const [selected, setSelected] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-  const [compareErr, setCompareErr] = useState<string | null>(null)
+  const {
+    data: err,
+    commit: commitError,
+    clear: clearError,
+  } = useContextPayload<string>(requestKey)
+  const {
+    data: compareErr,
+    commit: commitCompareError,
+    clear: clearCompareError,
+  } = useContextPayload<string>(previousRequestKey ?? requestKey)
   const [compareLoading, setCompareLoading] = useState(false)
   const [tableOpen, setTableOpen] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
@@ -43,8 +64,9 @@ export function OccupationPage() {
   useEffect(() => {
     let cancelled = false
     const isCancelled = () => cancelled
+    const capturedKey = requestKey
     beginFetch(isCancelled, () => {
-      setErr(null)
+      clearError(capturedKey)
     })
     fetchTable(GOLD_TABLES.OCUPACAO, scope, ano, mes, {
       limit: 2000,
@@ -52,10 +74,14 @@ export function OccupationPage() {
       sort_dir: 'desc',
     })
       .then((d) => {
-        if (!cancelled) setTbl(d)
+        if (!cancelled && responseMatchesRequest(d, capturedKey)) {
+          commitTable(capturedKey, d)
+        }
       })
       .catch((e: unknown) => {
-        if (!cancelled) setErr(e instanceof Error ? e.message : 'Erro')
+        if (!cancelled) {
+          commitError(capturedKey, e instanceof Error ? e.message : 'Erro')
+        }
       })
       .finally(() => {
         if (!cancelled) endFetch()
@@ -63,16 +89,25 @@ export function OccupationPage() {
     return () => {
       cancelled = true
     }
-  }, [scope, ano, mes, retryKey, beginFetch, endFetch])
+  }, [
+    scope,
+    ano,
+    mes,
+    requestKey,
+    retryKey,
+    beginFetch,
+    endFetch,
+    clearError,
+    commitError,
+    commitTable,
+  ])
 
   useEffect(() => {
-    if (!previousCompetencia) {
+    if (!previousCompetencia || !previousRequestKey) {
       let cancelled = false
       const isCancelled = () => cancelled
       scheduleAsyncState(isCancelled, () => {
         setCompareLoading(false)
-        setCompareErr(null)
-        setTblPrevious(null)
       })
       return () => {
         cancelled = true
@@ -81,9 +116,10 @@ export function OccupationPage() {
 
     let cancelled = false
     const isCancelled = () => cancelled
+    const capturedKey = previousRequestKey
     scheduleAsyncState(isCancelled, () => {
       setCompareLoading(true)
-      setCompareErr(null)
+      clearCompareError(capturedKey)
     })
     fetchTable(GOLD_TABLES.OCUPACAO, scope, previousCompetencia.ano, previousCompetencia.mes, {
       limit: 2000,
@@ -91,10 +127,14 @@ export function OccupationPage() {
       sort_dir: 'desc',
     })
       .then((d) => {
-        if (!cancelled) setTblPrevious(d)
+        if (!cancelled && responseMatchesRequest(d, capturedKey)) {
+          commitPrevious(capturedKey, d)
+        }
       })
       .catch((e: unknown) => {
-        if (!cancelled) setCompareErr(e instanceof Error ? e.message : 'Erro')
+        if (!cancelled) {
+          commitCompareError(capturedKey, e instanceof Error ? e.message : 'Erro')
+        }
       })
       .finally(() => {
         if (!cancelled) setCompareLoading(false)
@@ -102,12 +142,47 @@ export function OccupationPage() {
     return () => {
       cancelled = true
     }
-  }, [scope, previousCompetencia, retryKey])
+  }, [
+    scope,
+    previousCompetencia,
+    previousRequestKey,
+    retryKey,
+    clearCompareError,
+    commitCompareError,
+    commitPrevious,
+  ])
 
+  useEffect(() => {
+    let cancelled = false
+    if (tbl && !selectionExists(selected, tbl.rows, GOLD_COLUMNS.CBO_OCUPACAO)) {
+      scheduleAsyncState(() => cancelled, () => setSelected(null))
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [selected, tbl])
+
+  const comparison = useMemo(
+    () =>
+      comparisonPayloadsForContext(
+        tablePayload,
+        requestKey,
+        previousTablePayload,
+        previousRequestKey,
+      ),
+    [previousRequestKey, previousTablePayload, requestKey, tablePayload],
+  )
+  const comparisonPreviousRows = comparison?.previous.rows
+  const comparisonCurrentRows = comparison?.current.rows
   const compareData = useMemo(() => {
-    if (!tblPrevious || !tbl) return []
-    return buildPeriodDeltaData(tblPrevious.rows, tbl.rows, GOLD_COLUMNS.CBO_OCUPACAO)
-  }, [tbl, tblPrevious])
+    if (!comparisonPreviousRows || !comparisonCurrentRows) return []
+    return buildPeriodDeltaData(
+      comparisonPreviousRows,
+      comparisonCurrentRows,
+      GOLD_COLUMNS.CBO_OCUPACAO,
+    )
+  }, [comparisonCurrentRows, comparisonPreviousRows])
+  const compareReady = comparison !== null
 
   if (err) {
     return <ErrorState message={err} onRetry={() => setRetryKey((k) => k + 1)} />
@@ -116,10 +191,18 @@ export function OccupationPage() {
     return <LoadingState label="Carregando dados de ocupações..." />
   }
 
-  const rowsForChart = selected
+  const visibleSelection = selectionExists(
+    selected,
+    tbl.rows,
+    GOLD_COLUMNS.CBO_OCUPACAO,
+  )
+    ? selected
+    : null
+  const rowsForChart = visibleSelection
     ? tbl.rows.filter(
         (r) =>
-          String((r as Record<string, unknown>)[GOLD_COLUMNS.CBO_OCUPACAO] ?? '') === selected,
+          String((r as Record<string, unknown>)[GOLD_COLUMNS.CBO_OCUPACAO] ?? '') ===
+          visibleSelection,
       )
     : tbl.rows
   const chartRows = rowsForChart.slice(0, 12)
@@ -146,7 +229,7 @@ export function OccupationPage() {
         title="Composição do saldo por ocupação"
         subtitle="Distribuição do saldo de empregos entre as principais ocupações"
         action={
-          selected ? (
+          visibleSelection ? (
             <button
               type="button"
               onClick={() => setSelected(null)}
@@ -157,12 +240,12 @@ export function OccupationPage() {
           ) : null
         }
       >
-        {selected ? (
-          <p className="mb-2 text-xs text-slate-400">Filtro ativo: {selected}</p>
+        {visibleSelection ? (
+          <p className="mb-2 text-xs text-slate-400">Filtro ativo: {visibleSelection}</p>
         ) : null}
         <SignedTreemap
           nodes={treemapNodes}
-          selectedName={selected}
+          selectedName={visibleSelection}
           onSelect={(name) => setSelected((cur) => (cur === name ? null : name))}
         />
       </ChartCard>
@@ -203,7 +286,7 @@ export function OccupationPage() {
         {previousCompetencia && compareErr ? (
           <p className="text-sm text-slate-400">Comparativo indisponível: {compareErr}</p>
         ) : null}
-        {previousCompetencia && !compareErr && compareLoading ? (
+        {previousCompetencia && !compareErr && (compareLoading || !compareReady) ? (
           <LoadingState
             variant="solid"
             fillHeight={false}
@@ -211,7 +294,7 @@ export function OccupationPage() {
             label="Atualizando comparativo..."
           />
         ) : null}
-        {previousCompetencia && !compareErr && !compareLoading ? (
+        {previousCompetencia && !compareErr && !compareLoading && compareReady ? (
           compareData.length ? (
             <CompetenciaDeltaBar
               data={compareData}

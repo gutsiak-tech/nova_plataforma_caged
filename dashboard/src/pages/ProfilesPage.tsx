@@ -15,16 +15,29 @@ import { useScope } from '../context/ScopeContext'
 import { useMonth } from '../context/MonthContext'
 import { chartTheme } from '../lib/chartTheme'
 import { labelScope } from '../lib/format'
+import { buildRequestContextKey, responseMatchesRequest } from '../lib/requestContext'
+import { useContextPayload } from '../lib/useContextPayload'
 import { useScopeStableLoading } from '../lib/useScopeStableLoading'
 
 const palette = chartTheme.palette
+type ProfilesPayload = {
+  overview: OverviewResponse
+  pairTables: Record<string, TableResponse | null>
+}
 
 export function ProfilesPage() {
   const { scope } = useScope()
   const { ano, mes, label } = useMonth()
-  const [ov, setOv] = useState<OverviewResponse | null>(null)
-  const [pairTables, setPairTables] = useState<Record<string, TableResponse | null>>({})
-  const [err, setErr] = useState<string | null>(null)
+  const requestKey = buildRequestContextKey(scope, ano, mes)
+  const { data: payload, commit: commitPayload } =
+    useContextPayload<ProfilesPayload>(requestKey)
+  const ov = payload?.overview ?? null
+  const pairTables = payload?.pairTables ?? {}
+  const {
+    data: err,
+    commit: commitError,
+    clear: clearError,
+  } = useContextPayload<string>(requestKey)
   const [retryKey, setRetryKey] = useState(0)
   const { beginFetch, endFetch, shellClass, showInitialLoader } = useScopeStableLoading(ov)
   const [tableOpen, setTableOpen] = useState({
@@ -36,8 +49,9 @@ export function ProfilesPage() {
   useEffect(() => {
     let c = false
     const isCancelled = () => c
+    const capturedKey = requestKey
     beginFetch(isCancelled, () => {
-      setErr(null)
+      clearError(capturedKey)
     })
     Promise.all([
       fetchOverview(scope, ano, mes),
@@ -56,11 +70,16 @@ export function ProfilesPage() {
     ])
       .then(([o, a, b, d]) => {
         if (c) return
-        setOv(o)
-        setPairTables({ sexo_faixa: a, sexo_instrucao: b, faixa_instrucao: d })
+        if (![o, a, b, d].every((response) => responseMatchesRequest(response, capturedKey))) {
+          return
+        }
+        commitPayload(capturedKey, {
+          overview: o,
+          pairTables: { sexo_faixa: a, sexo_instrucao: b, faixa_instrucao: d },
+        })
       })
       .catch((e: unknown) => {
-        if (!c) setErr(e instanceof Error ? e.message : 'Erro')
+        if (!c) commitError(capturedKey, e instanceof Error ? e.message : 'Erro')
       })
       .finally(() => {
         if (!c) endFetch()
@@ -68,7 +87,18 @@ export function ProfilesPage() {
     return () => {
       c = true
     }
-  }, [scope, ano, mes, retryKey, beginFetch, endFetch])
+  }, [
+    scope,
+    ano,
+    mes,
+    requestKey,
+    retryKey,
+    beginFetch,
+    endFetch,
+    clearError,
+    commitError,
+    commitPayload,
+  ])
 
   if (err) {
     return <ErrorState message={err} onRetry={() => setRetryKey((k) => k + 1)} />
