@@ -1,3 +1,5 @@
+import shutil
+import tempfile
 import pandas as pd
 import unicodedata
 from pathlib import Path
@@ -7,12 +9,11 @@ from app.core.logging import setup_logger
 from app.core.config import PIPELINE_LOG_FILE
 from pipelines.common.utils import ensure_dir
 from pipelines.gold.validate_gold import (
-    ensure_gold_output_valid,
+    GoldOutputValidationResult,
+    SilverInputValidationResult,
     ensure_silver_input_valid,
-    load_silver_metadata,
-    validate_gold_outputs,
     validate_silver_input_for_gold,
-    write_gold_metadata,
+    validate_and_publish_gold,
 )
 
 logger = setup_logger("gold", PIPELINE_LOG_FILE)
@@ -201,6 +202,42 @@ def salvar_se_nao_vazia(df: pd.DataFrame, output_dir: Path, nome_arquivo: str) -
         salvar_tabela(df, output_dir, nome_arquivo)
 
 
+def publicar_tabelas_gold(
+    ano: int,
+    mes: int,
+    final_output_dir: Path,
+    tabelas: dict[str, pd.DataFrame],
+    sheet_map: dict[str, pd.DataFrame],
+    silver_input: SilverInputValidationResult,
+) -> GoldOutputValidationResult:
+    """Grava e valida a competência fora do caminho publicado antes do swap."""
+    ensure_dir(final_output_dir.parent)
+    staging_dir = Path(
+        tempfile.mkdtemp(
+            prefix=f".{final_output_dir.name}.staging-",
+            dir=final_output_dir.parent,
+        )
+    )
+    try:
+        for nome, tabela in tabelas.items():
+            salvar_se_nao_vazia(tabela, staging_dir, nome)
+
+        excel_path = staging_dir / f"tabelas_caged_{ano}_{mes:02d}.xlsx"
+        with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
+            for sheet_name, tabela in sheet_map.items():
+                escrever_aba_se_nao_vazia(writer, tabela, sheet_name)
+
+        return validate_and_publish_gold(
+            ano,
+            mes,
+            silver_input=silver_input,
+            staging_dir=staging_dir,
+            final_dir=final_output_dir,
+        )
+    finally:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+
+
 # =========================================================
 # FUNÇÃO PRINCIPAL
 # =========================================================
@@ -216,7 +253,6 @@ def run_aggregate_indicators(ano: int = DEFAULT_ANO, mes: int = DEFAULT_MES) -> 
     df = pd.read_parquet(silver_file)
 
     output_dir = gold_mes_dir(ano, mes)
-    ensure_dir(output_dir)
 
     competencia = f"{ano}-{mes:02d}"
 
@@ -430,14 +466,9 @@ def run_aggregate_indicators(ano: int = DEFAULT_ANO, mes: int = DEFAULT_MES) -> 
         "tabela_perfil_faixa_etaria_instrucao_salario_rmc": tabela_perfil_faixa_etaria_instrucao_salario_rmc,
     }
 
-    for nome, tabela in tabelas.items():
-        salvar_se_nao_vazia(tabela, output_dir, nome)
-
     # -----------------------------------------------------
     # Excel consolidado
     # -----------------------------------------------------
-    excel_path = output_dir / f"tabelas_caged_{ano}_{mes:02d}.xlsx"
-
     sheet_map = {
         "resumo": tabela_resumo,
         "uf": tabela_uf,
@@ -500,17 +531,14 @@ def run_aggregate_indicators(ano: int = DEFAULT_ANO, mes: int = DEFAULT_MES) -> 
         "fx_ins_sal_rmc": tabela_perfil_faixa_etaria_instrucao_salario_rmc,
     }
 
-    with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
-        for sheet_name, tabela in sheet_map.items():
-            escrever_aba_se_nao_vazia(writer, tabela, sheet_name)
-
-    gold_output = validate_gold_outputs(
+    gold_output = publicar_tabelas_gold(
         ano,
         mes,
-        silver_metadata=load_silver_metadata(ano, mes),
+        output_dir,
+        tabelas,
+        sheet_map,
+        silver_input,
     )
-    write_gold_metadata(ano, mes, silver_input, gold_output)
-    ensure_gold_output_valid(gold_output)
 
     logger.info(
         f"[GOLD] Concluído | output={output_dir} | validation={gold_output.validation_status}"

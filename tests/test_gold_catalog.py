@@ -15,6 +15,7 @@ from app.services.gold_catalog_service import (
     list_gold_partitions,
     write_gold_catalog,
 )
+from pipelines.gold.gold_contract import MIN_REQUIRED_GOLD_TABLES
 
 client = TestClient(app)
 
@@ -56,6 +57,17 @@ def _write_table(month_dir: Path, name: str, *, parquet: bool = True) -> None:
         pd.DataFrame(
             {"secao": ["A"], "admissoes": [1], "desligamentos": [2], "saldo": [-1]}
         ).to_parquet(month_dir / f"{name}.parquet", index=False)
+
+
+def _mark_month_valid(month_dir: Path) -> None:
+    for table_name in MIN_REQUIRED_GOLD_TABLES:
+        csv_path = month_dir / f"{table_name}.csv"
+        if not csv_path.exists():
+            _write_table(month_dir, table_name, parquet=False)
+    (month_dir / "metadata.json").write_text(
+        json.dumps({"validation_status": "ok"}),
+        encoding="utf-8",
+    )
 
 
 def test_list_gold_partitions_ignores_invalid_dirs(tmp_path):
@@ -160,6 +172,7 @@ def test_catalog_endpoint_filter_scope_rmc(monkeypatch, tmp_path):
     _write_table(month, "tabela_setor_rmc")
     catalog_dir = tmp_path / "catalog"
     result = write_gold_catalog(gold_root=gold_root, catalog_dir=catalog_dir, docs_path=tmp_path / "gold_catalog.md")
+    _mark_month_valid(month)
     _patch_catalog_paths(monkeypatch, gold_root, result["json_path"])
 
     response = client.get("/api/gold/v1/catalog?ano=2026&mes=2&scope=rmc")

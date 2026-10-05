@@ -11,6 +11,11 @@ import pandas as pd
 from app.core.config import API_LOG_FILE, DEFAULT_ANO, DEFAULT_MES, GOLD_CAGED_DIR, PROJECT_ROOT
 from app.core.logging import setup_logger
 from app.services.gold_catalog_service import CURRENT_PIPELINE_TABLES
+from pipelines.gold.publication import (
+    canonical_gold_competencia_dir,
+    is_valid_gold_competencia_dir,
+    select_published_gold_competencia_dir,
+)
 
 logger = setup_logger("api.gold", API_LOG_FILE)
 
@@ -49,8 +54,11 @@ class GoldMonthRef:
 
     @property
     def dir(self) -> Path:
-        return GOLD_CAGED_DIR / f"ano={self.ano}" / f"mes={self.mes:02d}"
-
+        return select_published_gold_competencia_dir(
+            GOLD_CAGED_DIR,
+            self.ano,
+            self.mes,
+        )
 
 def validate_ano(ano: int) -> int:
     if not (ANO_MIN <= ano <= ANO_MAX):
@@ -368,7 +376,7 @@ def relative_project_path(path: Path) -> str:
 
 
 def _is_valid_competencia_dir(month_dir: Path) -> bool:
-    return (month_dir / "tabela_resumo.csv").is_file()
+    return is_valid_gold_competencia_dir(month_dir)
 
 
 def list_available_competencias(
@@ -378,7 +386,7 @@ def list_available_competencias(
     gold_root: Path | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Lista competências Gold válidas (diretórios ano=*/mes=* com tabela_resumo.csv).
+    Lista competências Gold publicadas, completas e com metadata válido.
     """
     root = gold_root or GOLD_CAGED_DIR
     if not root.exists():
@@ -396,17 +404,10 @@ def list_available_competencias(
         except ValueError:
             continue
 
-        for mes_dir in sorted(ano_dir.glob("mes=*")):
-            if not mes_dir.is_dir():
-                continue
-            mes = _parse_partition_dir(mes_dir.name, "mes")
-            if mes is None:
-                continue
-            try:
-                validate_mes(mes)
-            except ValueError:
-                continue
-            if not _is_valid_competencia_dir(mes_dir):
+        for mes in range(MES_MIN, MES_MAX + 1):
+            canonical_dir = canonical_gold_competencia_dir(root, ano, mes)
+            month_dir = select_published_gold_competencia_dir(root, ano, mes)
+            if not _is_valid_competencia_dir(month_dir):
                 continue
 
             items.append(
@@ -415,7 +416,7 @@ def list_available_competencias(
                     "mes": mes,
                     "competencia": f"{ano}-{mes:02d}",
                     "label": f"{MESES_PT[mes]} de {ano}",
-                    "path": _relative_gold_path(mes_dir),
+                    "path": _relative_gold_path(canonical_dir),
                     "is_default": False,
                 }
             )

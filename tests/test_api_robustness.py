@@ -8,8 +8,17 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services.gold_catalog_service import GOLD_CATALOG_JSON
+from pipelines.gold.gold_contract import MIN_REQUIRED_GOLD_TABLES
 
 client = TestClient(app)
+
+
+def _write_required_gold_tables(month_dir: Path) -> None:
+    for table_name in MIN_REQUIRED_GOLD_TABLES:
+        (month_dir / f"{table_name}.csv").write_text(
+            "saldo,admissoes,desligamentos\n0,0,0\n",
+            encoding="utf-8",
+        )
 
 
 def test_health_returns_200_without_gold_dependency(monkeypatch, tmp_path):
@@ -29,6 +38,7 @@ def test_ready_returns_200_when_gold_and_catalog_exist(monkeypatch, tmp_path):
     gold_root = tmp_path / "gold" / "caged"
     month_dir = gold_root / "ano=2026" / "mes=02"
     month_dir.mkdir(parents=True)
+    _write_required_gold_tables(month_dir)
     (month_dir / "tabela_resumo.csv").write_text(
         "competencia,admissoes,desligamentos,saldo\n",
         encoding="utf-8",
@@ -240,15 +250,21 @@ def test_table_missing_table_returns_structured_error(monkeypatch, tmp_path):
     gold_root = tmp_path / "gold" / "caged"
     month_dir = gold_root / "ano=2026" / "mes=02"
     month_dir.mkdir(parents=True)
-    (month_dir / "tabela_resumo.csv").write_text("a\n", encoding="utf-8")
+    _write_required_gold_tables(month_dir)
+    (month_dir / "metadata.json").write_text(
+        json.dumps({"validation_status": "ok"}),
+        encoding="utf-8",
+    )
     monkeypatch.setattr("app.services.gold_service.GOLD_CAGED_DIR", gold_root)
 
-    response = client.get("/api/gold/v1/table/tabela_setor?scope=br&ano=2026&mes=2")
+    response = client.get(
+        "/api/gold/v1/table/tabela_perfil_sexo?scope=br&ano=2026&mes=2"
+    )
 
     assert response.status_code == 404
     body = response.json()
     assert body["error"]["code"] == "GOLD_TABLE_NOT_FOUND"
-    assert body["error"]["details"]["table"] == "tabela_setor"
+    assert body["error"]["details"]["table"] == "tabela_perfil_sexo"
 
 
 def test_overview_missing_competencia_returns_structured_error(monkeypatch, tmp_path):

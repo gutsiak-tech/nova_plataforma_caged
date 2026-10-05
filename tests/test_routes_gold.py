@@ -1,8 +1,11 @@
 """Testes de compatibilidade dos endpoints Gold com ano/mês."""
 
+import json
+
 from fastapi.testclient import TestClient
 
 from app.main import app
+from pipelines.gold.gold_contract import MIN_REQUIRED_GOLD_TABLES
 
 client = TestClient(app)
 
@@ -15,7 +18,18 @@ def test_meta_with_mes_only_still_works():
     assert body["month"]["ano"] == 2026
 
 
-def test_meta_with_ano_and_mes():
+def test_meta_with_ano_and_mes(monkeypatch, tmp_path):
+    gold_root = tmp_path / "gold" / "caged"
+    month_dir = gold_root / "ano=2026" / "mes=01"
+    month_dir.mkdir(parents=True)
+    for table_name in MIN_REQUIRED_GOLD_TABLES:
+        (month_dir / f"{table_name}.csv").write_text("saldo\n0\n", encoding="utf-8")
+    (month_dir / "metadata.json").write_text(
+        json.dumps({"validation_status": "ok"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("app.services.gold_service.GOLD_CAGED_DIR", gold_root)
+
     response = client.get("/api/gold/v1/meta?ano=2026&mes=1")
     assert response.status_code == 200
     body = response.json()

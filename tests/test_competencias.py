@@ -1,19 +1,23 @@
 """Testes de listagem de competências Gold e endpoint /competencias."""
 
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services.gold_service import get_competencias_payload, list_available_competencias
+from pipelines.gold.gold_contract import MIN_REQUIRED_GOLD_TABLES
 
 
 def _make_competencia_dir(root: Path, ano: int, mes: int, *, with_resumo: bool = True) -> Path:
     month_dir = root / f"ano={ano}" / f"mes={mes:02d}"
     month_dir.mkdir(parents=True, exist_ok=True)
     if with_resumo:
-        (month_dir / "tabela_resumo.csv").write_text(
-            "competencia,admissoes,desligamentos,saldo\n",
+        for table_name in MIN_REQUIRED_GOLD_TABLES:
+            (month_dir / f"{table_name}.csv").write_text("saldo\n0\n", encoding="utf-8")
+        (month_dir / "metadata.json").write_text(
+            json.dumps({"validation_status": "ok"}),
             encoding="utf-8",
         )
     return month_dir

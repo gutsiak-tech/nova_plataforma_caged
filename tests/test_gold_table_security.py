@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
@@ -15,6 +16,7 @@ from app.services.gold_service import (
     resolve_gold_table_paths,
     validate_gold_table_name,
 )
+from pipelines.gold.gold_contract import MIN_REQUIRED_GOLD_TABLES
 
 
 client = TestClient(app)
@@ -25,6 +27,12 @@ def gold_fixture(monkeypatch, tmp_path):
     gold_root = tmp_path / "gold" / "caged"
     month_dir = gold_root / "ano=2026" / "mes=02"
     month_dir.mkdir(parents=True)
+
+    for table_name in MIN_REQUIRED_GOLD_TABLES:
+        pd.DataFrame({"saldo": [0]}).to_csv(
+            month_dir / f"{table_name}.csv",
+            index=False,
+        )
 
     pd.DataFrame(
         {
@@ -40,6 +48,11 @@ def gold_fixture(monkeypatch, tmp_path):
             month_dir / f"tabela_setor{suffix}.csv",
             index=False,
         )
+
+    (month_dir / "metadata.json").write_text(
+        json.dumps({"validation_status": "ok"}),
+        encoding="utf-8",
+    )
 
     monkeypatch.setattr("app.services.gold_service.GOLD_CAGED_DIR", gold_root)
     monkeypatch.setattr("app.services.gold_service.DEFAULT_ANO", 2026)

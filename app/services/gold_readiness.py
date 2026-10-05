@@ -2,57 +2,61 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from app.core.config import DEFAULT_ANO, DEFAULT_MES, GOLD_CAGED_DIR
 from app.services.gold_catalog_service import GOLD_CATALOG_JSON, load_gold_catalog
 from app.services.gold_service import get_competencias_payload, list_available_competencias
+from pipelines.gold.publication import (
+    inspect_gold_competencia_dir,
+    select_published_gold_competencia_dir,
+)
 
 GOLD_METADATA_FILENAME = "metadata.json"
 
 
 def default_gold_metadata_path() -> Path:
-    return GOLD_CAGED_DIR / f"ano={DEFAULT_ANO}" / f"mes={DEFAULT_MES:02d}" / GOLD_METADATA_FILENAME
+    month_dir = select_published_gold_competencia_dir(
+        GOLD_CAGED_DIR,
+        DEFAULT_ANO,
+        DEFAULT_MES,
+    )
+    return month_dir / GOLD_METADATA_FILENAME
 
 
 def _apply_gold_metadata_checks(checks: dict[str, bool], problems: list[str]) -> None:
-    """Checagens leves via metadata.json da competência default (sem ler CSVs)."""
-    meta_path = default_gold_metadata_path()
-    checks["gold_metadata_exists"] = meta_path.is_file()
+    """Aplica à competência default a mesma validade usada pela API Gold."""
+    month_dir = select_published_gold_competencia_dir(
+        GOLD_CAGED_DIR,
+        DEFAULT_ANO,
+        DEFAULT_MES,
+    )
+    meta_path = month_dir / GOLD_METADATA_FILENAME
+    state = inspect_gold_competencia_dir(month_dir)
+
+    checks["gold_metadata_exists"] = state.metadata_exists
+    checks["gold_metadata_readable"] = state.metadata_readable
+    checks["gold_metadata_status_ok"] = state.metadata_status_ok
+    checks["gold_required_files_ok"] = state.required_files_ok
+
     if not checks["gold_metadata_exists"]:
         problems.append(
             f"metadata.json da Gold não encontrado para competência default: {meta_path}"
         )
-        checks["gold_metadata_readable"] = False
-        checks["gold_metadata_status_ok"] = False
-        return
-
-    try:
-        payload = json.loads(meta_path.read_text(encoding="utf-8"))
-        checks["gold_metadata_readable"] = True
-    except (OSError, json.JSONDecodeError) as exc:
-        checks["gold_metadata_readable"] = False
-        checks["gold_metadata_status_ok"] = False
-        problems.append(f"metadata.json da Gold ilegível ({meta_path}): {exc}")
-        return
-
-    status = str(payload.get("validation_status") or "").lower()
-    legacy = str(payload.get("status") or "").lower()
-    if status == "error" or legacy == "gold_error":
-        checks["gold_metadata_status_ok"] = False
+    elif not checks["gold_metadata_readable"]:
+        problems.append(f"metadata.json da Gold ilegível: {meta_path}")
+    elif not checks["gold_metadata_status_ok"]:
         problems.append(
-            f"metadata Gold com validation_status=error para "
-            f"{DEFAULT_ANO}-{DEFAULT_MES:02d}."
+            "metadata Gold sem validation_status aceitável "
+            f"para {DEFAULT_ANO}-{DEFAULT_MES:02d} "
+            f"(validation_status={state.validation_status!r})."
         )
-    elif status in ("ok", "warning") or legacy in ("gold_ok", "gold_warning"):
-        checks["gold_metadata_status_ok"] = True
-    else:
-        checks["gold_metadata_status_ok"] = False
+
+    if not checks["gold_required_files_ok"]:
         problems.append(
-            "metadata Gold sem validation_status reconhecido "
-            f"(validation_status={status!r}, status={legacy!r})."
+            "Arquivos Gold obrigatórios ausentes para competência default: "
+            + ", ".join(state.missing_required_files)
         )
 
 

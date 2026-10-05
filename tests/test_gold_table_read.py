@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 import pandas as pd
@@ -18,6 +19,7 @@ from app.services.gold_service import (
     read_gold_table,
     resolve_gold_table_paths,
 )
+from pipelines.gold.gold_contract import MIN_REQUIRED_GOLD_TABLES
 
 client = TestClient(app)
 
@@ -47,8 +49,17 @@ def _clear_read_caches() -> None:
 def _setup_month_dir(gold_root, ano: int = 2026, mes: int = 2):
     month_dir = gold_root / f"ano={ano}" / f"mes={mes:02d}"
     month_dir.mkdir(parents=True, exist_ok=True)
+    for table_name in MIN_REQUIRED_GOLD_TABLES:
+        (month_dir / f"{table_name}.csv").write_text(
+            "saldo,admissoes,desligamentos\n0,0,0\n",
+            encoding="utf-8",
+        )
     (month_dir / "tabela_resumo.csv").write_text(
-        "competencia,admissoes,desligamentos,saldo\n2026-02,1,1,0\n",
+        f"competencia,admissoes,desligamentos,saldo\n{ano}-{mes:02d},1,1,0\n",
+        encoding="utf-8",
+    )
+    (month_dir / "metadata.json").write_text(
+        json.dumps({"validation_status": "ok"}),
         encoding="utf-8",
     )
     return month_dir
@@ -167,7 +178,7 @@ def test_read_gold_table_raises_when_neither_format_exists(monkeypatch, tmp_path
     month = GoldMonthRef(ano=2026, mes=2)
 
     with pytest.raises(FileNotFoundError, match="Tabela Gold não encontrada"):
-        read_gold_table(month, "tabela_setor", "br")
+        read_gold_table(month, "tabela_perfil_sexo", "br")
 
 
 def test_table_endpoint_structure_unchanged_with_parquet(monkeypatch, tmp_path):
@@ -301,7 +312,7 @@ def test_table_not_found_returns_gold_table_not_found(monkeypatch, tmp_path):
     monkeypatch.setattr("app.services.gold_service.GOLD_CAGED_DIR", gold_root)
 
     response = client.get(
-        "/api/gold/v1/table/tabela_setor?scope=br&ano=2026&mes=2"
+        "/api/gold/v1/table/tabela_perfil_sexo?scope=br&ano=2026&mes=2"
     )
     assert response.status_code == 404
     body = response.json()

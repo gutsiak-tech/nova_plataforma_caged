@@ -23,6 +23,7 @@ from pipelines.gold.gold_contract import (
     TABELA_RESUMO_COLUMNS,
     excel_filename,
 )
+from pipelines.gold.publication import publish_gold_directory
 
 logger = setup_logger("gold.validate", PIPELINE_LOG_FILE)
 
@@ -193,15 +194,17 @@ def validate_gold_outputs(
     mes: int,
     *,
     silver_metadata: dict | None = None,
+    output_dir: Path | None = None,
+    reported_output_dir: Path | None = None,
 ) -> GoldOutputValidationResult:
     """Valida artefatos Gold existentes em disco."""
     competencia = f"{ano}-{mes:02d}"
-    output_dir = gold_mes_dir(ano, mes)
+    output_dir = output_dir or gold_mes_dir(ano, mes)
     result = GoldOutputValidationResult(
         ano=ano,
         mes=mes,
         competencia=competencia,
-        gold_dir=_relative_path(output_dir),
+        gold_dir=_relative_path(reported_output_dir or output_dir),
         generated_at=datetime.now(timezone.utc).isoformat(),
     )
 
@@ -217,7 +220,8 @@ def validate_gold_outputs(
         return result
 
     expected_partition = f"ano={ano}/mes={mes:02d}"
-    if expected_partition not in output_dir.as_posix():
+    validation_path = reported_output_dir or output_dir
+    if expected_partition not in validation_path.as_posix():
         result.warnings.append(
             f"Caminho Gold pode não corresponder à competência {competencia}."
         )
@@ -412,10 +416,12 @@ def write_gold_metadata(
     mes: int,
     silver_input: SilverInputValidationResult | None,
     gold_output: GoldOutputValidationResult,
+    *,
+    output_dir: Path | None = None,
 ) -> Path:
     from pipelines.common.utils import save_json
 
-    path = gold_mes_dir(ano, mes) / GOLD_METADATA_FILE
+    path = (output_dir or gold_mes_dir(ano, mes)) / GOLD_METADATA_FILE
     try:
         save_json(build_gold_metadata(silver_input, gold_output), path)
     except OSError as exc:
@@ -462,6 +468,34 @@ def ensure_gold_output_valid(result: GoldOutputValidationResult) -> GoldOutputVa
         result.tabela_resumo_ok,
     )
     return result
+
+
+def validate_and_publish_gold(
+    ano: int,
+    mes: int,
+    *,
+    silver_input: SilverInputValidationResult,
+    staging_dir: Path,
+    final_dir: Path,
+) -> GoldOutputValidationResult:
+    """Valida o staging e somente então o publica como competência corrente."""
+    gold_output = validate_gold_outputs(
+        ano,
+        mes,
+        silver_metadata=load_silver_metadata(ano, mes),
+        output_dir=staging_dir,
+        reported_output_dir=final_dir,
+    )
+    write_gold_metadata(
+        ano,
+        mes,
+        silver_input,
+        gold_output,
+        output_dir=staging_dir,
+    )
+    ensure_gold_output_valid(gold_output)
+    publish_gold_directory(staging_dir, final_dir)
+    return gold_output
 
 
 def run_validate_gold_only(ano: int, mes: int) -> GoldOutputValidationResult:
