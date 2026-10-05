@@ -156,7 +156,17 @@ def test_validate_bronze_only_skips_silver_gold(mock_ingest, mock_clean, mock_go
 
 
 def test_parse_args_accepts_validate_bronze_only_flag():
-    with patch("sys.argv", ["run_monthly_pipeline", "--validate-bronze-only"]):
+    with patch(
+        "sys.argv",
+        [
+            "run_monthly_pipeline",
+            "--ano",
+            "2026",
+            "--mes",
+            "3",
+            "--validate-bronze-only",
+        ],
+    ):
         args = monthly_module._parse_args()
     assert args.validate_bronze_only is True
 

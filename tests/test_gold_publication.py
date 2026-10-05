@@ -105,7 +105,13 @@ def test_invalid_or_incomplete_gold_is_not_available(tmp_path, case):
             encoding="utf-8",
         )
 
-    assert list_available_competencias(gold_root=gold_root) == []
+    assert (
+        list_available_competencias(
+            gold_root=gold_root,
+            use_config_override=False,
+        )
+        == []
+    )
 
 
 def test_reader_falls_back_to_previous_during_swap(tmp_path):
@@ -193,11 +199,13 @@ def test_readiness_uses_same_validity_rule(monkeypatch, tmp_path):
 
     monkeypatch.setattr("app.services.gold_readiness.GOLD_CAGED_DIR", gold_root)
     monkeypatch.setattr("app.services.gold_readiness.GOLD_CATALOG_JSON", catalog_path)
-    monkeypatch.setattr("app.services.gold_readiness.DEFAULT_ANO", 2026)
-    monkeypatch.setattr("app.services.gold_readiness.DEFAULT_MES", 2)
     monkeypatch.setattr("app.services.gold_service.GOLD_CAGED_DIR", gold_root)
     monkeypatch.setattr("app.services.gold_service.DEFAULT_ANO", 2026)
     monkeypatch.setattr("app.services.gold_service.DEFAULT_MES", 2)
+    monkeypatch.setattr(
+        "app.services.gold_service.DEFAULT_COMPETENCIA_CONFIG_ERROR",
+        None,
+    )
     monkeypatch.setattr("app.services.gold_catalog_service.GOLD_CATALOG_JSON", catalog_path)
 
     report = build_readiness_report()

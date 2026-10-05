@@ -8,7 +8,14 @@ from typing import Any, Literal
 
 import pandas as pd
 
-from app.core.config import API_LOG_FILE, DEFAULT_ANO, DEFAULT_MES, GOLD_CAGED_DIR, PROJECT_ROOT
+from app.core.config import (
+    API_LOG_FILE,
+    DEFAULT_ANO,
+    DEFAULT_COMPETENCIA_CONFIG_ERROR,
+    DEFAULT_MES,
+    GOLD_CAGED_DIR,
+    PROJECT_ROOT,
+)
 from app.core.logging import setup_logger
 from app.services.gold_catalog_service import CURRENT_PIPELINE_TABLES
 from pipelines.gold.publication import (
@@ -47,6 +54,10 @@ class InvalidGoldTableError(ValueError):
     """Nome lógico de tabela fora do contrato público da Gold."""
 
 
+class DefaultCompetenciaError(ValueError):
+    """A competência padrão não pode ser resolvida com segurança."""
+
+
 @dataclass(frozen=True)
 class GoldMonthRef:
     ano: int
@@ -77,12 +88,22 @@ def validate_mes(mes: int) -> int:
 
 
 def resolve_gold_month(ano: int | None = None, mes: int | None = None) -> GoldMonthRef:
-    """
-    Resolve competência Gold usando defaults de app.core.config quando omitidos.
-    """
-    resolved_ano = validate_ano(ano if ano is not None else DEFAULT_ANO)
-    resolved_mes = validate_mes(mes if mes is not None else DEFAULT_MES)
-    return GoldMonthRef(ano=resolved_ano, mes=resolved_mes)
+    """Resolve parâmetros explícitos ou a competência Gold válida padrão."""
+    if ano is not None:
+        validate_ano(ano)
+    if mes is not None:
+        validate_mes(mes)
+    if (ano is None) != (mes is None):
+        raise ValueError("ano e mes devem ser informados em conjunto.")
+    if ano is not None and mes is not None:
+        return GoldMonthRef(ano=ano, mes=mes)
+
+    default_month = resolve_default_competencia()
+    if default_month is None:
+        raise DefaultCompetenciaError(
+            "Nenhuma competência Gold válida disponível para uso como padrão."
+        )
+    return default_month
 
 
 def _suffix_for_scope(scope: Scope) -> str:
@@ -379,15 +400,11 @@ def _is_valid_competencia_dir(month_dir: Path) -> bool:
     return is_valid_gold_competencia_dir(month_dir)
 
 
-def list_available_competencias(
+def list_valid_competencias(
     *,
-    default_ano: int | None = None,
-    default_mes: int | None = None,
     gold_root: Path | None = None,
 ) -> list[dict[str, Any]]:
-    """
-    Lista competências Gold publicadas, completas e com metadata válido.
-    """
+    """Lista cronologicamente as competências aceitas pela validade Gold central."""
     root = gold_root or GOLD_CAGED_DIR
     if not root.exists():
         return []
@@ -422,21 +439,78 @@ def list_available_competencias(
             )
 
     items.sort(key=lambda item: (item["ano"], item["mes"]))
+    return items
 
-    resolved_default_ano = default_ano if default_ano is not None else DEFAULT_ANO
-    resolved_default_mes = default_mes if default_mes is not None else DEFAULT_MES
-    default_idx = next(
-        (
-            idx
-            for idx, item in enumerate(items)
-            if item["ano"] == resolved_default_ano and item["mes"] == resolved_default_mes
-        ),
-        None,
+
+def resolve_default_competencia(
+    *,
+    items: list[dict[str, Any]] | None = None,
+    default_ano: int | None = None,
+    default_mes: int | None = None,
+    gold_root: Path | None = None,
+    use_config_override: bool = True,
+) -> GoldMonthRef | None:
+    """Resolve override completo ou, quando ausente, a Gold válida mais recente."""
+    available = items if items is not None else list_valid_competencias(gold_root=gold_root)
+
+    if default_ano is not None or default_mes is not None:
+        if default_ano is None or default_mes is None:
+            raise DefaultCompetenciaError(
+                "Override de competência incompleto: informe DEFAULT_ANO e DEFAULT_MES."
+            )
+        override = (validate_ano(default_ano), validate_mes(default_mes))
+    elif use_config_override:
+        if DEFAULT_COMPETENCIA_CONFIG_ERROR:
+            raise DefaultCompetenciaError(DEFAULT_COMPETENCIA_CONFIG_ERROR)
+        override = (
+            (DEFAULT_ANO, DEFAULT_MES)
+            if DEFAULT_ANO is not None and DEFAULT_MES is not None
+            else None
+        )
+    else:
+        override = None
+
+    if override is not None:
+        match = next(
+            (
+                item
+                for item in available
+                if item["ano"] == override[0] and item["mes"] == override[1]
+            ),
+            None,
+        )
+        if match is None:
+            raise DefaultCompetenciaError(
+                "A competência configurada como override não é uma Gold válida disponível."
+            )
+        return GoldMonthRef(ano=match["ano"], mes=match["mes"])
+
+    if not available:
+        return None
+    latest = max(available, key=lambda item: (item["ano"], item["mes"]))
+    return GoldMonthRef(ano=latest["ano"], mes=latest["mes"])
+
+
+def list_available_competencias(
+    *,
+    default_ano: int | None = None,
+    default_mes: int | None = None,
+    gold_root: Path | None = None,
+    use_config_override: bool = True,
+) -> list[dict[str, Any]]:
+    """Lista Gold válida e marca a competência padrão pela política institucional."""
+    items = list_valid_competencias(gold_root=gold_root)
+    default_month = resolve_default_competencia(
+        items=items,
+        default_ano=default_ano,
+        default_mes=default_mes,
+        use_config_override=use_config_override,
     )
-    if default_idx is None and items:
-        default_idx = len(items) - 1
-    if default_idx is not None:
-        items[default_idx]["is_default"] = True
+    if default_month is not None:
+        for item in items:
+            item["is_default"] = (
+                item["ano"] == default_month.ano and item["mes"] == default_month.mes
+            )
 
     return items
 
@@ -446,11 +520,13 @@ def get_competencias_payload(
     default_ano: int | None = None,
     default_mes: int | None = None,
     gold_root: Path | None = None,
+    use_config_override: bool = True,
 ) -> dict[str, Any]:
     items = list_available_competencias(
         default_ano=default_ano,
         default_mes=default_mes,
         gold_root=gold_root,
+        use_config_override=use_config_override,
     )
     default_item = next((item for item in items if item["is_default"]), None)
     default = None

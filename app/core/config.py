@@ -36,8 +36,32 @@ GOLD_CAGED_DIR = GOLD_DIR / "caged"
 # =========================
 # Configurações gerais
 # =========================
-DEFAULT_ANO = int(os.getenv("DEFAULT_ANO", "2026"))
-DEFAULT_MES = int(os.getenv("DEFAULT_MES", "1"))
+def _optional_int_env(name: str) -> tuple[int | None, str | None]:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return None, None
+    try:
+        return int(raw), None
+    except ValueError:
+        return None, f"{name} deve ser um número inteiro."
+
+
+DEFAULT_ANO, _default_ano_error = _optional_int_env("DEFAULT_ANO")
+DEFAULT_MES, _default_mes_error = _optional_int_env("DEFAULT_MES")
+
+_default_errors = [
+    error for error in (_default_ano_error, _default_mes_error) if error is not None
+]
+if (DEFAULT_ANO is None) != (DEFAULT_MES is None):
+    _default_errors.append(
+        "DEFAULT_ANO e DEFAULT_MES devem ser configurados em conjunto."
+    )
+if DEFAULT_ANO is not None and not 2000 <= DEFAULT_ANO <= 2100:
+    _default_errors.append("DEFAULT_ANO deve estar entre 2000 e 2100.")
+if DEFAULT_MES is not None and not 1 <= DEFAULT_MES <= 12:
+    _default_errors.append("DEFAULT_MES deve estar entre 1 e 12.")
+
+DEFAULT_COMPETENCIA_CONFIG_ERROR = " ".join(_default_errors) or None
 DEFAULT_UF = os.getenv("DEFAULT_UF", "PR")
 
 # =========================

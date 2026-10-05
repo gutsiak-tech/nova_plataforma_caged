@@ -21,6 +21,15 @@ def _write_required_gold_tables(month_dir: Path) -> None:
         )
 
 
+def _set_default_override(monkeypatch, ano: int | None, mes: int | None) -> None:
+    monkeypatch.setattr("app.services.gold_service.DEFAULT_ANO", ano)
+    monkeypatch.setattr("app.services.gold_service.DEFAULT_MES", mes)
+    monkeypatch.setattr(
+        "app.services.gold_service.DEFAULT_COMPETENCIA_CONFIG_ERROR",
+        None,
+    )
+
+
 def test_health_returns_200_without_gold_dependency(monkeypatch, tmp_path):
     monkeypatch.setattr("app.services.gold_readiness.GOLD_CAGED_DIR", tmp_path / "missing-gold")
 
@@ -68,10 +77,7 @@ def test_ready_returns_200_when_gold_and_catalog_exist(monkeypatch, tmp_path):
     monkeypatch.setattr("app.services.gold_service.GOLD_CAGED_DIR", gold_root)
     monkeypatch.setattr("app.services.gold_catalog_service.GOLD_CAGED_DIR", gold_root)
     monkeypatch.setattr("app.services.gold_catalog_service.GOLD_CATALOG_JSON", catalog_path)
-    monkeypatch.setattr("app.services.gold_service.DEFAULT_ANO", 2026)
-    monkeypatch.setattr("app.services.gold_service.DEFAULT_MES", 2)
-    monkeypatch.setattr("app.services.gold_readiness.DEFAULT_ANO", 2026)
-    monkeypatch.setattr("app.services.gold_readiness.DEFAULT_MES", 2)
+    _set_default_override(monkeypatch, 2026, 2)
 
     response = client.get("/ready")
 
@@ -85,6 +91,53 @@ def test_ready_returns_200_when_gold_and_catalog_exist(monkeypatch, tmp_path):
     assert body["checks"]["gold_metadata_exists"] is True
     assert body["checks"]["gold_metadata_status_ok"] is True
     assert body["available_competencias_count"] == 1
+
+
+def test_ready_uses_latest_valid_competence_without_override(monkeypatch, tmp_path):
+    gold_root = tmp_path / "gold" / "caged"
+    for mes in (5, 6):
+        month_dir = gold_root / "ano=2026" / f"mes={mes:02d}"
+        month_dir.mkdir(parents=True)
+        _write_required_gold_tables(month_dir)
+        (month_dir / "metadata.json").write_text(
+            json.dumps({"validation_status": "ok"}),
+            encoding="utf-8",
+        )
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr("app.services.gold_readiness.GOLD_CAGED_DIR", gold_root)
+    monkeypatch.setattr("app.services.gold_readiness.GOLD_CATALOG_JSON", catalog_path)
+    _set_default_override(monkeypatch, None, None)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json()["default_competencia"]["competencia"] == "2026-06"
+
+
+def test_ready_rejects_invalid_override_without_path_leak(monkeypatch, tmp_path):
+    gold_root = tmp_path / "gold" / "caged"
+    month_dir = gold_root / "ano=2026" / "mes=06"
+    month_dir.mkdir(parents=True)
+    _write_required_gold_tables(month_dir)
+    (month_dir / "metadata.json").write_text(
+        json.dumps({"validation_status": "ok"}),
+        encoding="utf-8",
+    )
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr("app.services.gold_readiness.GOLD_CAGED_DIR", gold_root)
+    monkeypatch.setattr("app.services.gold_readiness.GOLD_CATALOG_JSON", catalog_path)
+    _set_default_override(monkeypatch, 2026, 5)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["checks"]["default_configuration_valid"] is False
+    assert body["default_competencia"] is None
+    assert any("override" in problem.lower() for problem in body["problems"])
+    assert all(str(tmp_path) not in problem for problem in body["problems"])
 
 
 def test_ready_returns_503_when_gold_missing(monkeypatch, tmp_path):
@@ -129,10 +182,7 @@ def test_ready_reports_missing_catalog(monkeypatch, tmp_path):
     monkeypatch.setattr("app.services.gold_readiness.GOLD_CAGED_DIR", gold_root)
     monkeypatch.setattr("app.services.gold_readiness.GOLD_CATALOG_JSON", missing_catalog)
     monkeypatch.setattr("app.services.gold_service.GOLD_CAGED_DIR", gold_root)
-    monkeypatch.setattr("app.services.gold_service.DEFAULT_ANO", 2026)
-    monkeypatch.setattr("app.services.gold_service.DEFAULT_MES", 1)
-    monkeypatch.setattr("app.services.gold_readiness.DEFAULT_ANO", 2026)
-    monkeypatch.setattr("app.services.gold_readiness.DEFAULT_MES", 1)
+    _set_default_override(monkeypatch, 2026, 1)
 
     response = client.get("/ready")
 
@@ -162,17 +212,15 @@ def test_ready_gold_metadata_missing(monkeypatch, tmp_path):
     monkeypatch.setattr("app.services.gold_service.GOLD_CAGED_DIR", gold_root)
     monkeypatch.setattr("app.services.gold_catalog_service.GOLD_CAGED_DIR", gold_root)
     monkeypatch.setattr("app.services.gold_catalog_service.GOLD_CATALOG_JSON", catalog_path)
-    monkeypatch.setattr("app.services.gold_service.DEFAULT_ANO", 2026)
-    monkeypatch.setattr("app.services.gold_service.DEFAULT_MES", 2)
-    monkeypatch.setattr("app.services.gold_readiness.DEFAULT_ANO", 2026)
-    monkeypatch.setattr("app.services.gold_readiness.DEFAULT_MES", 2)
+    _set_default_override(monkeypatch, 2026, 2)
 
     response = client.get("/ready")
 
     assert response.status_code == 503
     body = response.json()
     assert body["checks"]["gold_metadata_exists"] is False
-    assert any("metadata" in p.lower() for p in body["problems"])
+    assert body["checks"]["default_configuration_valid"] is False
+    assert any("override" in p.lower() for p in body["problems"])
 
 
 def test_ready_gold_metadata_error(monkeypatch, tmp_path):
@@ -199,17 +247,15 @@ def test_ready_gold_metadata_error(monkeypatch, tmp_path):
     monkeypatch.setattr("app.services.gold_service.GOLD_CAGED_DIR", gold_root)
     monkeypatch.setattr("app.services.gold_catalog_service.GOLD_CAGED_DIR", gold_root)
     monkeypatch.setattr("app.services.gold_catalog_service.GOLD_CATALOG_JSON", catalog_path)
-    monkeypatch.setattr("app.services.gold_service.DEFAULT_ANO", 2026)
-    monkeypatch.setattr("app.services.gold_service.DEFAULT_MES", 2)
-    monkeypatch.setattr("app.services.gold_readiness.DEFAULT_ANO", 2026)
-    monkeypatch.setattr("app.services.gold_readiness.DEFAULT_MES", 2)
+    _set_default_override(monkeypatch, 2026, 2)
 
     response = client.get("/ready")
 
     assert response.status_code == 503
     body = response.json()
     assert body["checks"]["gold_metadata_status_ok"] is False
-    assert any("error" in p.lower() for p in body["problems"])
+    assert body["checks"]["default_configuration_valid"] is False
+    assert any("override" in p.lower() for p in body["problems"])
 
 
 def test_meta_missing_competencia_returns_structured_error(monkeypatch, tmp_path):

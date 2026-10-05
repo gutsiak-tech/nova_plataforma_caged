@@ -6,8 +6,6 @@ from typing import Iterable, Optional
 from app.core.config import (
     SILVER_CAGED_DIR,
     BRONZE_CAGED_DIR,
-    DEFAULT_ANO,
-    DEFAULT_MES,
     PIPELINE_LOG_FILE,
 )
 from app.core.logging import setup_logger
@@ -222,8 +220,8 @@ def log_resumo_colunas(df: pd.DataFrame, colunas: list[str], titulo: str) -> Non
 # PIPELINE PRINCIPAL
 # =========================================================
 def run_clean_caged(
-    ano: int = DEFAULT_ANO,
-    mes: int = DEFAULT_MES,
+    ano: int,
+    mes: int,
     *,
     diagnosticar: bool = True,
 ) -> pd.DataFrame:

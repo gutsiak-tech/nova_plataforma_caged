@@ -31,8 +31,6 @@ export function formatCurrencyBRL(n: unknown): string {
   }).format(Number(n))
 }
 
-import { DEFAULT_API_ANO } from '../api/constants'
-
 export function labelScope(scope: string): string {
   if (scope === 'br') return 'Brasil'
   if (scope === 'pr') return 'Paraná'
@@ -40,9 +38,8 @@ export function labelScope(scope: string): string {
   return scope
 }
 
-export function formatCompetencia(mes: number, ano?: number): string {
-  const y = ano ?? DEFAULT_API_ANO
-  return `${y}-${String(mes).padStart(2, '0')}`
+export function formatCompetencia(mes: number, ano: number): string {
+  return `${ano}-${String(mes).padStart(2, '0')}`
 }
 
 const SHORT_MONTH = [

@@ -41,6 +41,14 @@ export function MonthToggle() {
     )
   }
 
+  if (competencias.length === 0) {
+    return (
+      <p className="text-sm text-[color:var(--ds-text-secondary)]">
+        Nenhuma competência Gold válida disponível.
+      </p>
+    )
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className={theme.selector.labelClass}>Competência</span>

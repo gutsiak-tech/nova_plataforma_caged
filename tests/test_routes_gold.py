@@ -10,12 +10,12 @@ from pipelines.gold.gold_contract import MIN_REQUIRED_GOLD_TABLES
 client = TestClient(app)
 
 
-def test_meta_with_mes_only_still_works():
+def test_meta_with_mes_only_is_rejected_as_ambiguous():
     response = client.get("/api/gold/v1/meta?mes=2")
-    assert response.status_code == 200
+    assert response.status_code == 400
     body = response.json()
-    assert body["month"]["mes"] == 2
-    assert body["month"]["ano"] == 2026
+    assert body["error"]["code"] == "INVALID_COMPETENCIA"
+    assert "ano e mes devem ser informados em conjunto" in body["error"]["message"]
 
 
 def test_meta_with_ano_and_mes(monkeypatch, tmp_path):
@@ -44,12 +44,12 @@ def test_meta_invalid_mes_returns_400():
     assert "mes inválido" in body["error"]["message"]
 
 
-def test_overview_with_legacy_params():
+def test_overview_with_mes_only_is_rejected_as_ambiguous():
     response = client.get("/api/gold/v1/overview?scope=br&mes=2")
-    assert response.status_code == 200
+    assert response.status_code == 400
     body = response.json()
-    assert body["month"]["ano"] == 2026
-    assert body["month"]["mes"] == 2
+    assert body["error"]["code"] == "INVALID_COMPETENCIA"
+    assert "ano e mes devem ser informados em conjunto" in body["error"]["message"]
 
 
 def test_table_with_ano_and_mes():

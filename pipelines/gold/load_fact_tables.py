@@ -1,14 +1,14 @@
 import pandas as pd
 
 from app.db.connection import get_connection
-from app.core.config import GOLD_CAGED_DIR, DEFAULT_ANO, DEFAULT_MES
+from app.core.config import GOLD_CAGED_DIR
 from app.core.logging import setup_logger
 from app.core.config import PIPELINE_LOG_FILE
 
 logger = setup_logger("load_fact", PIPELINE_LOG_FILE)
 
 
-def load_fact_emprego_municipio(ano: int = DEFAULT_ANO, mes: int = DEFAULT_MES):
+def load_fact_emprego_municipio(ano: int, mes: int):
     logger.info(f"[LOAD] Iniciando carga de fatos | ano={ano} mes={mes}")
 
     path = (

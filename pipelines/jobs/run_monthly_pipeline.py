@@ -6,7 +6,7 @@ from pipelines.gold.aggregate_indicators import run_aggregate_indicators
 from pipelines.jobs.build_gold_catalog import run_build_gold_catalog
 
 from app.core.logging import setup_logger
-from app.core.config import PIPELINE_LOG_FILE, DEFAULT_ANO, DEFAULT_MES
+from app.core.config import PIPELINE_LOG_FILE
 from app.services.gold_service import resolve_gold_month
 from app.services.gold_catalog_service import (
     apply_catalog_validation,
@@ -18,13 +18,15 @@ logger = setup_logger("job_monthly", PIPELINE_LOG_FILE)
 
 def _run_catalog_and_validate(
     *,
-    ano: int,
-    mes: int,
+    ano: int | None,
+    mes: int | None,
     validate_catalog: bool,
 ) -> None:
     catalog_result = run_build_gold_catalog()
     if not validate_catalog:
         return
+    if ano is None or mes is None:
+        raise ValueError("ano e mes são obrigatórios para validar o catálogo.")
 
     logger.info("[JOB] Validando catálogo Gold (--validate-catalog)")
     validation = validate_catalog_for_competencia(
@@ -36,8 +38,8 @@ def _run_catalog_and_validate(
 
 
 def run_monthly_pipeline(
-    ano: int = DEFAULT_ANO,
-    mes: int = DEFAULT_MES,
+    ano: int | None = None,
+    mes: int | None = None,
     *,
     build_catalog: bool = False,
     validate_catalog: bool = False,
@@ -46,6 +48,14 @@ def run_monthly_pipeline(
     validate_silver_only: bool = False,
     validate_gold_only: bool = False,
 ):
+    requires_competencia = not catalog_only or validate_catalog
+    if (ano is None) != (mes is None) or (
+        requires_competencia and (ano is None or mes is None)
+    ):
+        raise ValueError(
+            "ano e mes explícitos são obrigatórios para processar ou validar uma competência."
+        )
+
     if validate_gold_only:
         if validate_bronze_only or validate_silver_only or catalog_only:
             logger.warning("[JOB] Outras flags de etapa ignoradas em --validate-gold-only")
@@ -117,14 +127,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ano",
         type=int,
-        default=None,
-        help=f"Ano da competência (padrão: DEFAULT_ANO={DEFAULT_ANO} do .env)",
+        help="Ano da competência a processar.",
     )
     parser.add_argument(
         "--mes",
         type=int,
-        default=None,
-        help=f"Mês da competência (padrão: DEFAULT_MES={DEFAULT_MES} do .env)",
+        help="Mês da competência a processar.",
     )
     parser.add_argument(
         "--build-catalog",
@@ -156,15 +164,27 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Valida artefatos Gold existentes e grava metadata.json, sem Bronze/Silver.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    requires_competencia = not args.catalog_only or args.validate_catalog
+    if (args.ano is None) != (args.mes is None) or (
+        requires_competencia and (args.ano is None or args.mes is None)
+    ):
+        parser.error(
+            "--ano e --mes são obrigatórios para processar ou validar uma competência."
+        )
+    return args
 
 
 if __name__ == "__main__":
     args = _parse_args()
-    month = resolve_gold_month(ano=args.ano, mes=args.mes)
+    month = (
+        resolve_gold_month(ano=args.ano, mes=args.mes)
+        if args.ano is not None and args.mes is not None
+        else None
+    )
     run_monthly_pipeline(
-        ano=month.ano,
-        mes=month.mes,
+        ano=month.ano if month else None,
+        mes=month.mes if month else None,
         build_catalog=args.build_catalog,
         validate_catalog=args.validate_catalog,
         catalog_only=args.catalog_only,

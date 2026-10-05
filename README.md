@@ -108,9 +108,8 @@ pip install -r requirements-dev.txt
 ### Variáveis de ambiente
 
 1. Copie [`.env.example`](.env.example) para `.env`
-2. Preencha, no mínimo:
-   - `DEFAULT_ANO` — ano padrão da competência (ex.: `2026`)
-   - `DEFAULT_MES` — mês padrão (ex.: `1`, conforme [`.env.example`](.env.example))
+2. Ajuste conforme o ambiente:
+   - `DEFAULT_ANO` e `DEFAULT_MES` — override opcional e sempre em conjunto; quando omitidos, a API usa a competência Gold válida mais recente
    - `DEFAULT_UF` — UF de referência (ex.: `PR`)
    - `APP_ENV` / `APP_VERSION` — identificação nos endpoints `/health` e `/ready` (opcional)
 3. Variáveis `BRONZE_*` ajustam validação da Bronze (opcional; há padrões no código)
@@ -324,14 +323,6 @@ O script executa validação Bronze → Silver → pipeline completo com catálo
 5. `--validate-gold-only` após Gold gerada
 6. Verificar `GET /ready` na API antes de publicar o dashboard
 
-### Comando padrão
-
-Usa `DEFAULT_ANO` e `DEFAULT_MES` do `.env`:
-
-```powershell
-python -m pipelines.jobs.run_monthly_pipeline
-```
-
 ### Competência explícita
 
 ```powershell
@@ -340,6 +331,7 @@ python -m pipelines.jobs.run_monthly_pipeline --ano 2026 --mes 2
 ```
 
 Executa: **Bronze → Silver (com validação + metadata) → Gold (com validação + metadata)**.
+Os pipelines mutáveis exigem `--ano` e `--mes`; o override de leitura da API não dispara reprocessamento.
 
 ### Pipeline com catálogo
 

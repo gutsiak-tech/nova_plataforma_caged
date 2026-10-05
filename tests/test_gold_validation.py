@@ -275,7 +275,17 @@ def test_validate_gold_only_via_pipeline(mock_ingest, mock_clean, mock_gold, dat
 
 
 def test_parse_args_accepts_validate_gold_only_flag():
-    with patch("sys.argv", ["run_monthly_pipeline", "--validate-gold-only"]):
+    with patch(
+        "sys.argv",
+        [
+            "run_monthly_pipeline",
+            "--ano",
+            "2026",
+            "--mes",
+            "2",
+            "--validate-gold-only",
+        ],
+    ):
         args = monthly_module._parse_args()
     assert args.validate_gold_only is True
 

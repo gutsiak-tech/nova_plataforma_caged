@@ -12,7 +12,10 @@ from pipelines.jobs import run_monthly_pipeline as monthly_module
 
 
 def test_parse_args_accepts_build_catalog_flag():
-    with patch("sys.argv", ["run_monthly_pipeline", "--build-catalog"]):
+    with patch(
+        "sys.argv",
+        ["run_monthly_pipeline", "--ano", "2026", "--mes", "2", "--build-catalog"],
+    ):
         args = monthly_module._parse_args()
     assert args.build_catalog is True
     assert args.validate_catalog is False
@@ -21,19 +24,25 @@ def test_parse_args_accepts_build_catalog_flag():
 def test_parse_args_accepts_validate_catalog_flag():
     with patch(
         "sys.argv",
-        ["run_monthly_pipeline", "--build-catalog", "--validate-catalog"],
+        [
+            "run_monthly_pipeline",
+            "--ano",
+            "2026",
+            "--mes",
+            "2",
+            "--build-catalog",
+            "--validate-catalog",
+        ],
     ):
         args = monthly_module._parse_args()
     assert args.build_catalog is True
     assert args.validate_catalog is True
 
 
-def test_parse_args_default_without_flags():
+def test_parse_args_requires_explicit_competence():
     with patch("sys.argv", ["run_monthly_pipeline"]):
-        args = monthly_module._parse_args()
-    assert args.build_catalog is False
-    assert args.validate_catalog is False
-    assert args.catalog_only is False
+        with pytest.raises(SystemExit):
+            monthly_module._parse_args()
 
 
 def test_parse_args_accepts_catalog_only_flag():
@@ -53,12 +62,12 @@ def test_run_monthly_pipeline_catalog_only_skips_medallion(
     mock_gold,
     mock_catalog_step,
 ):
-    monthly_module.run_monthly_pipeline(ano=2026, mes=2, catalog_only=True)
+    monthly_module.run_monthly_pipeline(catalog_only=True)
 
     mock_ingest.assert_not_called()
     mock_clean.assert_not_called()
     mock_gold.assert_not_called()
-    mock_catalog_step.assert_called_once_with(ano=2026, mes=2, validate_catalog=False)
+    mock_catalog_step.assert_called_once_with(ano=None, mes=None, validate_catalog=False)
 
 
 @patch.object(monthly_module, "_run_catalog_and_validate")

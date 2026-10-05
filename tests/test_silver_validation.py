@@ -196,7 +196,17 @@ def test_validate_silver_only_skips_gold(mock_ingest, mock_clean, mock_gold):
 
 
 def test_parse_args_accepts_validate_silver_only_flag():
-    with patch("sys.argv", ["run_monthly_pipeline", "--validate-silver-only"]):
+    with patch(
+        "sys.argv",
+        [
+            "run_monthly_pipeline",
+            "--ano",
+            "2026",
+            "--mes",
+            "2",
+            "--validate-silver-only",
+        ],
+    ):
         args = monthly_module._parse_args()
     assert args.validate_silver_only is True
 

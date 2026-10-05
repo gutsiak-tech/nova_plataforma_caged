@@ -9,7 +9,7 @@ export function CompetenciaBadge({
   className?: string
   compact?: boolean
 }) {
-  const { label, competencia, loading, fetchError } = useMonth()
+  const { label, competencia, loading } = useMonth()
 
   return (
     <div
@@ -28,14 +28,6 @@ export function CompetenciaBadge({
       <span className={clsx('font-medium text-slate-100', compact && 'tabular-nums')}>
         {loading ? '...' : label || competencia}
       </span>
-      {fetchError ? (
-        <span
-          className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-200"
-          title="API de competências indisponível; usando lista local de fallback"
-        >
-          fallback
-        </span>
-      ) : null}
     </div>
   )
 }

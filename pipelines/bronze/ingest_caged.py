@@ -1,6 +1,7 @@
+import argparse
 from pathlib import Path
 
-from app.core.config import BRONZE_CAGED_DIR, DEFAULT_ANO, DEFAULT_MES, PIPELINE_LOG_FILE
+from app.core.config import BRONZE_CAGED_DIR, PIPELINE_LOG_FILE
 from app.core.logging import setup_logger
 from pipelines.bronze.validate_bronze import (
     BronzeValidationError,
@@ -25,7 +26,7 @@ def _write_metadata(pasta: Path, result, dicionario: Path) -> None:
         ) from exc
 
 
-def run_ingest_caged(ano: int = DEFAULT_ANO, mes: int = DEFAULT_MES):
+def run_ingest_caged(ano: int, mes: int):
     logger.info(f"[BRONZE] Iniciando ingestão | ano={ano} mes={mes}")
 
     pasta = bronze_mes_dir(ano, mes)
@@ -55,4 +56,8 @@ def run_ingest_caged(ano: int = DEFAULT_ANO, mes: int = DEFAULT_MES):
 
 
 if __name__ == "__main__":
-    run_ingest_caged()
+    parser = argparse.ArgumentParser(description="Valida uma competência Bronze CAGED.")
+    parser.add_argument("--ano", type=int, required=True)
+    parser.add_argument("--mes", type=int, required=True)
+    args = parser.parse_args()
+    run_ingest_caged(ano=args.ano, mes=args.mes)

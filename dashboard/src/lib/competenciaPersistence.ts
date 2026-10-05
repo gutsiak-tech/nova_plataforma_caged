@@ -18,7 +18,7 @@ export function normalizeAnoMes(
   if (!Number.isFinite(a) || !Number.isFinite(m)) return null
   if (!Number.isInteger(a) || !Number.isInteger(m)) return null
   if (m < 1 || m > 12) return null
-  if (a < 1990 || a > 2100) return null
+  if (a < 2000 || a > 2100) return null
   return { ano: a, mes: m }
 }
 
@@ -79,21 +79,20 @@ export function writeStoredCompetencia(ano: number, mes: number): void {
 }
 
 /**
- * Priority: URL query -> localStorage -> API default -> latest item -> fallback.
+ * Priority: URL query -> localStorage -> API default -> latest valid item.
  */
 export function resolveInitialCompetencia(
   items: Competencia[],
   searchParams: URLSearchParams,
   apiDefault: Competencia | null,
-  fallbackDefault: Competencia,
-): Competencia {
+  stored: CompetenciaQuery | null = readStoredCompetencia(),
+): Competencia | null {
   const fromUrl = parseCompetenciaQuery(searchParams)
   if (fromUrl) {
     const match = findCompetenciaByAnoMes(items, fromUrl.ano, fromUrl.mes)
     if (match) return match
   }
 
-  const stored = readStoredCompetencia()
   if (stored) {
     const match = findCompetenciaByAnoMes(items, stored.ano, stored.mes)
     if (match) return match
@@ -106,8 +105,10 @@ export function resolveInitialCompetencia(
     if (match) return match
   }
 
-  if (items.length > 0) return items[items.length - 1]
-  return fallbackDefault
+  if (items.length === 0) return null
+  return [...items].sort((left, right) =>
+    left.ano === right.ano ? left.mes - right.mes : left.ano - right.ano,
+  )[items.length - 1]
 }
 
 /**
@@ -117,45 +118,22 @@ export function resolveInitialCompetencia(
 export function pickCompetenciaAfterFetch(
   items: Competencia[],
   searchParams: URLSearchParams,
-  currentSelected: Competencia,
+  currentSelected: Competencia | null,
   apiDefault: Competencia | null,
-  fallbackDefault: Competencia,
-): Competencia {
-  const currentMatch =
-    findCompetenciaByKey(items, currentSelected.competencia) ??
-    findCompetenciaByAnoMes(items, currentSelected.ano, currentSelected.mes)
-
-  if (currentMatch) {
-    const stored = readStoredCompetencia()
-    if (
-      stored &&
-      Number(stored.ano) === Number(currentMatch.ano) &&
-      Number(stored.mes) === Number(currentMatch.mes)
-    ) {
-      return currentMatch
-    }
-
-    const fromUrl = parseCompetenciaQuery(searchParams)
-    if (fromUrl) {
-      const urlMatch = findCompetenciaByAnoMes(items, fromUrl.ano, fromUrl.mes)
-      if (
-        urlMatch &&
-        urlMatch.competencia === currentMatch.competencia
-      ) {
-        return currentMatch
-      }
-    }
-
-    if (!fromUrl) {
-      return currentMatch
-    }
+  stored: CompetenciaQuery | null = readStoredCompetencia(),
+): Competencia | null {
+  if (currentSelected) {
+    const currentMatch =
+      findCompetenciaByKey(items, currentSelected.competencia) ??
+      findCompetenciaByAnoMes(items, currentSelected.ano, currentSelected.mes)
+    if (currentMatch) return currentMatch
   }
 
   return resolveInitialCompetencia(
     items,
     searchParams,
     apiDefault,
-    fallbackDefault,
+    stored,
   )
 }
 

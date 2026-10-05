@@ -99,14 +99,17 @@ Origens permitidas vêm de **`CORS_ORIGINS`** no `.env` da raiz (CSV). Se vazio 
 
 | Variável | Back-end (`.env` / `app/core/config.py`) | Front-end |
 |----------|------------------------------------------|-----------|
-| `DEFAULT_ANO` | `2026` (fallback no código) | `dashboard/src/api/constants.ts` → `DEFAULT_API_ANO = 2026` (hardcoded; comentário indica alinhamento com `.env`) |
-| `DEFAULT_MES` | `1` (fallback; [`.env.example`](../.env.example)) | `DEFAULT_API_MES = 1` em `constants.ts`; fallbacks em `gold.ts` se `/competencias` falhar |
+| `DEFAULT_ANO` | Override opcional; só é aceito junto de `DEFAULT_MES` e se a Gold for válida | Usa `default` de `/competencias`; não possui fallback local |
+| `DEFAULT_MES` | Override opcional; quando o par é omitido, usa a Gold válida mais recente | A lista vazia ou erro da API produz estado seguro, sem competência fictícia |
 | `DEFAULT_UF` | `PR` | não identificado uso direto no dashboard |
 | `CORS_ORIGINS` | CSV no `.env`; defaults Vite em `config.py` se vazio | não aplicável (CORS é do back-end) |
 | `VITE_API_BASE_URL` | não aplicável | `dashboard/.env.example`; vazio = `/api` relativo (proxy ou reverse proxy) |
 | **Scope** | `br` default em `GET /table` e `GET /overview` | `ScopeContext.tsx` → `useState<Scope>('br')` |
 
 Competência no UI: URL `?ano=&mes=` + `localStorage` — ver `dashboard/src/lib/competenciaPersistence.ts` e `MonthContext.tsx`.
+
+Os pipelines mutáveis não inferem uma competência: `--ano` e `--mes` são
+obrigatórios, evitando reprocessamento acidental da Gold padrão de leitura.
 
 ---
 
@@ -146,7 +149,7 @@ Alterações de theme/plugins Tailwind devem ir apenas no `.cjs`. Tokens de cor 
 | Arquivo | O que protege |
 |---------|---------------|
 | [`tests/test_gold_frontend_contract.py`](../tests/test_gold_frontend_contract.py) | Contrato de dados Gold/API/front-end vs [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
-| [`tests/test_config_alignment.py`](../tests/test_config_alignment.py) | Alinhamento documentado deste arquivo e do README: Tailwind único (`tailwind.config.cjs`), limite **2000**, defaults `DEFAULT_ANO`/`DEFAULT_MES`, `VITE_API_BASE_URL`, proxy Vite, `CORS_ORIGINS` / CORS em `app/core/config.py`, referências cruzadas |
+| [`tests/test_config_alignment.py`](../tests/test_config_alignment.py) | Alinhamento documentado deste arquivo e do README: Tailwind único (`tailwind.config.cjs`), limite **2000**, override opcional `DEFAULT_ANO`/`DEFAULT_MES`, `VITE_API_BASE_URL`, proxy Vite, `CORS_ORIGINS` / CORS em `app/core/config.py`, referências cruzadas |
 
 Ambos são **estáticos** (leitura de arquivos com `pathlib`/regex), **não dependem** de data-lake populado e **não validam**:
 

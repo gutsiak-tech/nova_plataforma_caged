@@ -1,4 +1,3 @@
-import { DEFAULT_API_ANO, DEFAULT_API_MES } from './constants'
 import { http } from './http'
 import type {
   CompetenciasResponse,
@@ -24,7 +23,6 @@ export async function fetchOverview(
   })
   return data
 }
-
 export async function fetchTable(
   baseName: string,
   scope: Scope,
@@ -51,31 +49,4 @@ export async function fetchTable(
     },
   })
   return data
-}
-
-/** Fallback local quando /competencias não responde. */
-export function buildFallbackCompetencias(): CompetenciasResponse['items'] {
-  return [
-    {
-      ano: DEFAULT_API_ANO,
-      mes: 1,
-      competencia: `${DEFAULT_API_ANO}-01`,
-      label: 'Janeiro de 2026',
-    },
-    {
-      ano: DEFAULT_API_ANO,
-      mes: 2,
-      competencia: `${DEFAULT_API_ANO}-02`,
-      label: 'Fevereiro de 2026',
-    },
-  ]
-}
-
-export function buildFallbackDefault(): CompetenciasResponse['default'] {
-  return {
-    ano: DEFAULT_API_ANO,
-    mes: DEFAULT_API_MES,
-    competencia: `${DEFAULT_API_ANO}-${String(DEFAULT_API_MES).padStart(2, '0')}`,
-    label: DEFAULT_API_MES === 1 ? 'Janeiro de 2026' : 'Fevereiro de 2026',
-  }
 }

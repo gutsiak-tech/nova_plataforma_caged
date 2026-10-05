@@ -4,7 +4,7 @@ import pandas as pd
 import unicodedata
 from pathlib import Path
 
-from app.core.config import GOLD_CAGED_DIR, SILVER_CAGED_DIR, DEFAULT_ANO, DEFAULT_MES
+from app.core.config import GOLD_CAGED_DIR, SILVER_CAGED_DIR
 from app.core.logging import setup_logger
 from app.core.config import PIPELINE_LOG_FILE
 from pipelines.common.utils import ensure_dir
@@ -303,7 +303,7 @@ def publicar_tabelas_gold(
 # =========================================================
 # FUNÇÃO PRINCIPAL
 # =========================================================
-def run_aggregate_indicators(ano: int = DEFAULT_ANO, mes: int = DEFAULT_MES) -> None:
+def run_aggregate_indicators(ano: int, mes: int) -> None:
     logger.info(f"[GOLD] Iniciando | ano={ano} mes={mes}")
 
     get_minimum_wage_parameter(ano)

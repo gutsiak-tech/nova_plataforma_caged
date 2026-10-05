@@ -1,5 +1,8 @@
 """Testes de resolução de competência e caminhos Gold."""
 
+import json
+from pathlib import Path
+
 import pytest
 
 from app.services.gold_service import (
@@ -8,6 +11,18 @@ from app.services.gold_service import (
     validate_ano,
     validate_mes,
 )
+from pipelines.gold.gold_contract import MIN_REQUIRED_GOLD_TABLES
+
+
+def _make_valid_competencia(root: Path, ano: int, mes: int) -> None:
+    month = root / f"ano={ano}" / f"mes={mes:02d}"
+    month.mkdir(parents=True)
+    for table in MIN_REQUIRED_GOLD_TABLES:
+        (month / f"{table}.csv").write_text("saldo\n0\n", encoding="utf-8")
+    (month / "metadata.json").write_text(
+        json.dumps({"validation_status": "ok"}),
+        encoding="utf-8",
+    )
 
 
 def test_gold_month_ref_dir_format(monkeypatch, tmp_path):
@@ -25,12 +40,43 @@ def test_resolve_gold_month_explicit():
     assert month.mes == 1
 
 
-def test_resolve_gold_month_uses_config_defaults(monkeypatch):
-    monkeypatch.setattr("app.services.gold_service.DEFAULT_ANO", 2025)
-    monkeypatch.setattr("app.services.gold_service.DEFAULT_MES", 11)
+def test_resolve_gold_month_uses_latest_without_override(monkeypatch, tmp_path):
+    gold_root = tmp_path / "gold" / "caged"
+    _make_valid_competencia(gold_root, 2025, 12)
+    _make_valid_competencia(gold_root, 2026, 1)
+    monkeypatch.setattr("app.services.gold_service.GOLD_CAGED_DIR", gold_root)
+    monkeypatch.setattr("app.services.gold_service.DEFAULT_ANO", None)
+    monkeypatch.setattr("app.services.gold_service.DEFAULT_MES", None)
+    monkeypatch.setattr(
+        "app.services.gold_service.DEFAULT_COMPETENCIA_CONFIG_ERROR",
+        None,
+    )
+
     month = resolve_gold_month()
-    assert month.ano == 2025
-    assert month.mes == 11
+
+    assert (month.ano, month.mes) == (2026, 1)
+
+
+def test_resolve_gold_month_uses_valid_config_override(monkeypatch, tmp_path):
+    gold_root = tmp_path / "gold" / "caged"
+    _make_valid_competencia(gold_root, 2026, 1)
+    _make_valid_competencia(gold_root, 2026, 2)
+    monkeypatch.setattr("app.services.gold_service.GOLD_CAGED_DIR", gold_root)
+    monkeypatch.setattr("app.services.gold_service.DEFAULT_ANO", 2026)
+    monkeypatch.setattr("app.services.gold_service.DEFAULT_MES", 1)
+    monkeypatch.setattr(
+        "app.services.gold_service.DEFAULT_COMPETENCIA_CONFIG_ERROR",
+        None,
+    )
+
+    month = resolve_gold_month()
+
+    assert (month.ano, month.mes) == (2026, 1)
+
+
+def test_resolve_gold_month_rejects_partial_explicit_competence():
+    with pytest.raises(ValueError, match="em conjunto"):
+        resolve_gold_month(ano=2026)
 
 
 def test_validate_mes_invalid():

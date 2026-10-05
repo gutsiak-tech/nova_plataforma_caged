@@ -26,12 +26,18 @@ VITE_CONFIG = PROJECT_ROOT / "dashboard" / "vite.config.ts"
 
 API_LIMITS_TS = PROJECT_ROOT / "dashboard" / "src" / "lib" / "apiLimits.ts"
 GOLD_TS = PROJECT_ROOT / "dashboard" / "src" / "api" / "gold.ts"
-CONSTANTS_TS = PROJECT_ROOT / "dashboard" / "src" / "api" / "constants.ts"
 HTTP_TS = PROJECT_ROOT / "dashboard" / "src" / "api" / "http.ts"
 
 ROUTES_GOLD_PY = PROJECT_ROOT / "app" / "api" / "routes_gold.py"
 CONFIG_PY = PROJECT_ROOT / "app" / "core" / "config.py"
 MAIN_PY = PROJECT_ROOT / "app" / "main.py"
+MUTABLE_PIPELINE_FILES = (
+    PROJECT_ROOT / "pipelines" / "bronze" / "ingest_caged.py",
+    PROJECT_ROOT / "pipelines" / "silver" / "clean_caged.py",
+    PROJECT_ROOT / "pipelines" / "gold" / "aggregate_indicators.py",
+    PROJECT_ROOT / "pipelines" / "gold" / "load_fact_tables.py",
+    PROJECT_ROOT / "pipelines" / "jobs" / "run_monthly_pipeline.py",
+)
 
 FRONTEND_CONTRACT_TEST = PROJECT_ROOT / "tests" / "test_gold_frontend_contract.py"
 CONFIG_ALIGNMENT_TEST = PROJECT_ROOT / "tests" / "test_config_alignment.py"
@@ -116,34 +122,32 @@ def test_config_md_documents_table_limit(config_md_text: str) -> None:
 # --- 3. Defaults de competência ---
 
 
-def test_constants_ts_default_ano() -> None:
-    text = _read(CONSTANTS_TS)
-    assert re.search(r"DEFAULT_API_ANO\s*=\s*2026", text)
-
-
-def test_constants_ts_default_mes() -> None:
-    text = _read(CONSTANTS_TS)
-    assert re.search(r"DEFAULT_API_MES\s*=\s*1", text)
-
-
-def test_env_example_default_ano() -> None:
+def test_env_example_documents_optional_default_override() -> None:
     text = _read(ENV_EXAMPLE)
-    assert re.search(r"^DEFAULT_ANO=2026\s*$", text, re.MULTILINE)
+    assert re.search(r"^# DEFAULT_ANO=\d{4}\s*$", text, re.MULTILINE)
+    assert re.search(r"^# DEFAULT_MES=\d{1,2}\s*$", text, re.MULTILINE)
+    assert "Gold válida mais recente" in text
 
 
-def test_env_example_default_mes() -> None:
-    text = _read(ENV_EXAMPLE)
-    assert re.search(r"^DEFAULT_MES=1\s*$", text, re.MULTILINE)
-
-
-def test_config_py_default_ano_fallback() -> None:
+def test_config_py_has_no_hardcoded_competence_fallback() -> None:
     text = _read(CONFIG_PY)
-    assert re.search(r'DEFAULT_ANO\s*=\s*int\(os\.getenv\("DEFAULT_ANO",\s*"2026"\)\)', text)
+    assert '_optional_int_env("DEFAULT_ANO")' in text
+    assert '_optional_int_env("DEFAULT_MES")' in text
+    assert not re.search(r'os\.getenv\("DEFAULT_(?:ANO|MES)",', text)
 
 
-def test_config_py_default_mes_fallback() -> None:
-    text = _read(CONFIG_PY)
-    assert re.search(r'DEFAULT_MES\s*=\s*int\(os\.getenv\("DEFAULT_MES",\s*"1"\)\)', text)
+def test_frontend_has_no_hardcoded_competence_fallback() -> None:
+    text = _read(GOLD_TS)
+    assert "buildFallbackCompetencias" not in text
+    assert "buildFallbackDefault" not in text
+    assert not (PROJECT_ROOT / "dashboard" / "src" / "api" / "constants.ts").exists()
+
+
+def test_mutable_pipelines_do_not_inherit_read_default() -> None:
+    for path in MUTABLE_PIPELINE_FILES:
+        text = _read(path)
+        assert "DEFAULT_ANO" not in text
+        assert "DEFAULT_MES" not in text
 
 
 def test_readme_no_conflicting_default_mes_example(readme_text: str) -> None:
@@ -153,6 +157,9 @@ def test_readme_no_conflicting_default_mes_example(readme_text: str) -> None:
     assert not re.search(r"DEFAULT_MES`[^\n]*ex\.:\s*`2`", readme_text), (
         "README não deve sugerir DEFAULT_MES=2 como exemplo"
     )
+    assert "override opcional" in readme_text
+    assert "Gold válida mais recente" in readme_text
+    assert "exigem `--ano` e `--mes`" in readme_text
 
 
 def test_config_md_documents_defaults(config_md_text: str) -> None:

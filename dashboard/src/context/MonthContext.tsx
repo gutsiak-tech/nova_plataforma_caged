@@ -9,11 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import {
-  buildFallbackCompetencias,
-  buildFallbackDefault,
-  fetchCompetencias,
-} from '../api/gold'
+import { fetchCompetencias } from '../api/gold'
 import type { Competencia } from '../api/types'
 import {
   buildCompetenciaSearchParams,
@@ -21,7 +17,6 @@ import {
   findCompetenciaByAnoMes,
   parseCompetenciaQuery,
   pickCompetenciaAfterFetch,
-  resolveInitialCompetencia,
   selectionMatchesStorage,
   writeStoredCompetencia,
 } from '../lib/competenciaPersistence'
@@ -59,21 +54,8 @@ export function MonthProvider({ children }: { children: ReactNode }) {
   const skipUrlSyncRef = useRef(false)
   const initialFetchDoneRef = useRef(false)
 
-  const fallbackItems = useMemo(() => buildFallbackCompetencias(), [])
-  const fallbackDefault = useMemo(
-    () => buildFallbackDefault() ?? fallbackItems[0],
-    [fallbackItems],
-  )
-
-  const [competencias, setCompetencias] = useState<Competencia[]>(fallbackItems)
-  const [selected, setSelected] = useState<Competencia>(() =>
-    resolveInitialCompetencia(
-      fallbackItems,
-      readLocationSearchParams(),
-      null,
-      fallbackDefault,
-    ),
-  )
+  const [competencias, setCompetencias] = useState<Competencia[]>([])
+  const [selected, setSelected] = useState<Competencia | null>(null)
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
 
@@ -115,24 +97,22 @@ export function MonthProvider({ children }: { children: ReactNode }) {
       .then((res) => {
         if (cancelled) return
         setFetchError(false)
-        const items = res.items.length > 0 ? res.items : fallbackItems
+        const items = res.items
         setCompetencias(items)
 
         const currentParams = readLocationSearchParams()
-        const currentSelected = selectedRef.current ?? selected
         const next = pickCompetenciaAfterFetch(
           items,
           currentParams,
-          currentSelected,
+          selectedRef.current,
           res.default,
-          fallbackDefault,
         )
 
         selectedRef.current = next
         setSelected(next)
-        writeStoredCompetencia(next.ano, next.mes)
+        if (next) writeStoredCompetencia(next.ano, next.mes)
 
-        if (!initialFetchDoneRef.current) {
+        if (next && !initialFetchDoneRef.current) {
           initialFetchDoneRef.current = true
           skipUrlSyncRef.current = true
           syncUrlToSelection(next)
@@ -144,30 +124,9 @@ export function MonthProvider({ children }: { children: ReactNode }) {
       .catch(() => {
         if (cancelled) return
         setFetchError(true)
-        setCompetencias(fallbackItems)
-
-        const currentParams = readLocationSearchParams()
-        const currentSelected = selectedRef.current ?? selected
-        const next = pickCompetenciaAfterFetch(
-          fallbackItems,
-          currentParams,
-          currentSelected,
-          fallbackDefault,
-          fallbackDefault,
-        )
-
-        selectedRef.current = next
-        setSelected(next)
-        writeStoredCompetencia(next.ano, next.mes)
-
-        if (!initialFetchDoneRef.current) {
-          initialFetchDoneRef.current = true
-          skipUrlSyncRef.current = true
-          syncUrlToSelection(next)
-          queueMicrotask(() => {
-            skipUrlSyncRef.current = false
-          })
-        }
+        setCompetencias([])
+        selectedRef.current = null
+        setSelected(null)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -177,8 +136,7 @@ export function MonthProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
     // selectedRef holds latest pick; do not re-fetch when selected changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time competencias load
-  }, [fallbackDefault, fallbackItems, syncUrlToSelection])
+  }, [syncUrlToSelection])
 
   useEffect(() => {
     if (loading || skipUrlSyncRef.current) return
@@ -194,9 +152,9 @@ export function MonthProvider({ children }: { children: ReactNode }) {
 
     scheduleAsyncState(isCancelled, () => {
       setSelected((current) => {
-        if (current.competencia === found.competencia) return current
+        if (current?.competencia === found.competencia) return current
 
-        if (selectionMatchesStorage(current)) {
+        if (current && selectionMatchesStorage(current)) {
           skipUrlSyncRef.current = true
           syncUrlToSelection(current)
           queueMicrotask(() => {
@@ -225,24 +183,33 @@ export function MonthProvider({ children }: { children: ReactNode }) {
   )
 
   const previousCompetencia = useMemo(
-    () => findPrevious(competencias, selected),
+    () => (selected ? findPrevious(competencias, selected) : null),
     [competencias, selected],
   )
 
-  const value = useMemo(
-    () => ({
-      ano: selected.ano,
-      mes: selected.mes,
-      competencia: selected.competencia,
-      label: selected.label,
-      competencias,
-      previousCompetencia,
-      setCompetencia,
-      loading,
-      fetchError,
-    }),
-    [competencias, fetchError, loading, previousCompetencia, selected, setCompetencia],
-  )
+  if (!selected) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-6 text-center text-sm text-slate-400">
+        {loading
+          ? 'Carregando competências disponíveis...'
+          : fetchError
+            ? 'Não foi possível carregar as competências Gold.'
+            : 'Nenhuma competência Gold válida está disponível.'}
+      </div>
+    )
+  }
+
+  const value: MonthContextValue = {
+    ano: selected.ano,
+    mes: selected.mes,
+    competencia: selected.competencia,
+    label: selected.label,
+    competencias,
+    previousCompetencia,
+    setCompetencia,
+    loading,
+    fetchError,
+  }
 
   return <MonthContext.Provider value={value}>{children}</MonthContext.Provider>
 }

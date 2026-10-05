@@ -18,6 +18,7 @@ from app.services.gold_catalog_service import (
 )
 from app.services.gold_service import (
     CompetenciaNotFoundError,
+    DefaultCompetenciaError,
     GoldMonthRef,
     InvalidGoldTableError,
     Scope,
@@ -78,6 +79,12 @@ def _filter_salary_movement(
 def _resolve_month(ano: int | None, mes: int | None) -> GoldMonthRef:
     try:
         return resolve_gold_month(ano=ano, mes=mes)
+    except DefaultCompetenciaError as exc:
+        raise GoldAPIError(
+            "DEFAULT_COMPETENCIA_UNAVAILABLE",
+            str(exc),
+            status_code=503,
+        ) from exc
     except ValueError as exc:
         raise GoldAPIError(
             "INVALID_COMPETENCIA",
@@ -243,6 +250,12 @@ def catalog(
 def competencias():
     try:
         return get_competencias_payload()
+    except DefaultCompetenciaError as exc:
+        raise GoldAPIError(
+            "DEFAULT_COMPETENCIA_UNAVAILABLE",
+            str(exc),
+            status_code=503,
+        ) from exc
     except OSError as exc:
         logger.error("Falha ao listar competências Gold: %s", exc)
         raise GoldAPIError(
