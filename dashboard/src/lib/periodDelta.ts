@@ -13,24 +13,35 @@ export function buildPeriodDeltaData(
   previousRows: GoldRow[],
   currentRows: GoldRow[],
   nameKey: string,
+  options: { includeMissingAsZero?: boolean } = {},
 ): PeriodDeltaDatum[] {
-  const previousMap = new Map<string, number>()
-  for (const r of previousRows) {
-    const name = String((r as Record<string, unknown>)[nameKey] ?? '')
-    if (!name) continue
-    const v = Number((r as Record<string, unknown>)[GOLD_COLUMNS.SALDO] ?? NaN)
-    if (!Number.isFinite(v)) continue
-    previousMap.set(name, v)
+  function indexRows(rows: GoldRow[]) {
+    const index = new Map<string, number>()
+    for (const row of rows) {
+      const name = String((row as Record<string, unknown>)[nameKey] ?? '')
+      if (!name) continue
+      const value = Number((row as Record<string, unknown>)[GOLD_COLUMNS.SALDO] ?? NaN)
+      if (!Number.isFinite(value)) continue
+      index.set(name, value)
+    }
+    return index
   }
 
+  const previousMap = indexRows(previousRows)
+  const currentMap = indexRows(currentRows)
+  const names = options.includeMissingAsZero
+    ? new Set([...previousMap.keys(), ...currentMap.keys()])
+    : new Set(currentMap.keys())
+
   const candidates: PeriodDeltaDatum[] = []
-  for (const r of currentRows) {
-    const name = String((r as Record<string, unknown>)[nameKey] ?? '')
-    if (!name) continue
-    const currentValue = Number((r as Record<string, unknown>)[GOLD_COLUMNS.SALDO] ?? NaN)
-    if (!Number.isFinite(currentValue)) continue
-    const previousValue = previousMap.get(name)
-    if (previousValue === undefined) continue
+  for (const name of names) {
+    const previous = previousMap.get(name)
+    const current = currentMap.get(name)
+    if (!options.includeMissingAsZero && (previous === undefined || current === undefined)) {
+      continue
+    }
+    const previousValue = previous ?? 0
+    const currentValue = current ?? 0
     const deltaAbs = currentValue - previousValue
     const deltaPct =
       previousValue === 0 ? undefined : (deltaAbs / previousValue) * 100

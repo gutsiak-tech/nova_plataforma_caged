@@ -5,7 +5,7 @@ import { fetchTable } from '../api/gold'
 import type { TableResponse } from '../api/types'
 import { BarRankHorizontalLabels } from '../components/charts/BarRank'
 import { CompetenciaDeltaBar } from '../components/charts/CompetenciaDeltaBar'
-import { SignedTreemap, type SignedTreemapNode } from '../components/charts/SignedTreemap'
+import { SignedTreemap } from '../components/charts/SignedTreemap'
 import { DataGrid } from '../components/table/DataGrid'
 import { ChartCard } from '../components/ui/ChartCard'
 import { ChartTablePanel, TableToggleButton } from '../components/ui/ChartTableToggle'
@@ -17,7 +17,11 @@ import { useScope } from '../context/ScopeContext'
 import { useMonth } from '../context/MonthContext'
 import { labelScope, shortCompetenciaLabel } from '../lib/format'
 import { chartTheme } from '../lib/chartTheme'
-import { buildPeriodDeltaData } from '../lib/periodDelta'
+import { fetchCompleteTable } from '../lib/completeTable'
+import {
+  buildOccupationDeltaData,
+  buildOccupationTreemapNodes,
+} from '../lib/occupationAnalysis'
 import {
   buildRequestContextKey,
   comparisonPayloadsForContext,
@@ -68,11 +72,14 @@ export function OccupationPage() {
     beginFetch(isCancelled, () => {
       clearError(capturedKey)
     })
-    fetchTable(GOLD_TABLES.OCUPACAO, scope, ano, mes, {
-      limit: 2000,
-      sort_by: GOLD_COLUMNS.SALDO,
-      sort_dir: 'desc',
-    })
+    fetchCompleteTable((limit, offset) =>
+      fetchTable(GOLD_TABLES.OCUPACAO, scope, ano, mes, {
+        limit,
+        offset,
+        sort_by: GOLD_COLUMNS.SALDO,
+        sort_dir: 'desc',
+      }),
+    )
       .then((d) => {
         if (!cancelled && responseMatchesRequest(d, capturedKey)) {
           commitTable(capturedKey, d)
@@ -121,11 +128,20 @@ export function OccupationPage() {
       setCompareLoading(true)
       clearCompareError(capturedKey)
     })
-    fetchTable(GOLD_TABLES.OCUPACAO, scope, previousCompetencia.ano, previousCompetencia.mes, {
-      limit: 2000,
-      sort_by: GOLD_COLUMNS.SALDO,
-      sort_dir: 'desc',
-    })
+    fetchCompleteTable((limit, offset) =>
+      fetchTable(
+        GOLD_TABLES.OCUPACAO,
+        scope,
+        previousCompetencia.ano,
+        previousCompetencia.mes,
+        {
+          limit,
+          offset,
+          sort_by: GOLD_COLUMNS.SALDO,
+          sort_dir: 'desc',
+        },
+      ),
+    )
       .then((d) => {
         if (!cancelled && responseMatchesRequest(d, capturedKey)) {
           commitPrevious(capturedKey, d)
@@ -176,11 +192,7 @@ export function OccupationPage() {
   const comparisonCurrentRows = comparison?.current.rows
   const compareData = useMemo(() => {
     if (!comparisonPreviousRows || !comparisonCurrentRows) return []
-    return buildPeriodDeltaData(
-      comparisonPreviousRows,
-      comparisonCurrentRows,
-      GOLD_COLUMNS.CBO_OCUPACAO,
-    )
+    return buildOccupationDeltaData(comparisonPreviousRows, comparisonCurrentRows)
   }, [comparisonCurrentRows, comparisonPreviousRows])
   const compareReady = comparison !== null
 
@@ -206,23 +218,14 @@ export function OccupationPage() {
       )
     : tbl.rows
   const chartRows = rowsForChart.slice(0, 12)
-  const treemapNodes: SignedTreemapNode[] = tbl.rows
-    .map((r) => {
-      const name = String((r as Record<string, unknown>)[GOLD_COLUMNS.CBO_OCUPACAO] ?? '—')
-      const signed = Number((r as Record<string, unknown>)[GOLD_COLUMNS.SALDO] ?? 0)
-      const value = Math.abs(signed)
-      return { name, value, signedValue: signed }
-    })
-    .filter((n) => Number.isFinite(n.value) && n.value > 0)
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 40)
+  const treemapNodes = buildOccupationTreemapNodes(tbl.rows)
 
   return (
     <div className={['space-y-8', shellClass].filter(Boolean).join(' ')}>
       <PageHeader
         eyebrow="Ocupações"
         title={`CBO (ocupação) · ${labelScope(scope)}`}
-        subtitle={`${tbl.total.toLocaleString('pt-BR')} ocupações · competência ${label} · até 2.000 linhas ordenadas por saldo.`}
+        subtitle={`${tbl.total.toLocaleString('pt-BR')} ocupações · competência ${label} · universo completo ordenado por saldo.`}
       />
 
       <ChartCard
