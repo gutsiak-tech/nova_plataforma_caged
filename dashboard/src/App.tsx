@@ -2,6 +2,8 @@ import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 import { LoadingState } from './components/ui/LoadingState'
+import { MonthProvider } from './context/MonthContext'
+import { ScopeProvider } from './context/ScopeContext'
 
 const ExecutivePage = lazy(() =>
   import('./pages/ExecutivePage').then((m) => ({ default: m.ExecutivePage })),
@@ -20,6 +22,9 @@ const SalaryPage = lazy(() => import('./pages/SalaryPage').then((m) => ({ defaul
 const AboutDataPage = lazy(() =>
   import('./pages/AboutDataPage').then((m) => ({ default: m.AboutDataPage })),
 )
+const TerritorialLandingPage = lazy(() =>
+  import('./pages/TerritorialLandingPage').then((m) => ({ default: m.TerritorialLandingPage })),
+)
 
 function PageFallback() {
   return <LoadingState label="Carregando página..." />
@@ -27,66 +32,78 @@ function PageFallback() {
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<AppShell />}>
-        <Route
-          index
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <ExecutivePage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="territorio"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <TerritoryPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="setores"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <SectorPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="ocupacoes"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <OccupationPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="perfil"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <ProfilesPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="salario"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <SalaryPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="sobre"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <AboutDataPage />
-            </Suspense>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
-    </Routes>
+    <ScopeProvider>
+      <MonthProvider>
+        <Routes>
+          <Route
+            path="territorial"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <TerritorialLandingPage />
+              </Suspense>
+            }
+          />
+          <Route element={<AppShell />}>
+            <Route
+              index
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <ExecutivePage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="territorio"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <TerritoryPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="setores"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <SectorPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="ocupacoes"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <OccupationPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="perfil"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <ProfilesPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="salario"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <SalaryPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="sobre"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <AboutDataPage />
+                </Suspense>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </MonthProvider>
+    </ScopeProvider>
   )
 }

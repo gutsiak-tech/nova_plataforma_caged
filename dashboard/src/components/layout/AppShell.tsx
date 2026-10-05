@@ -4,13 +4,12 @@ import {
   Activity,
   Briefcase,
   Building2,
+  Compass,
   Info,
   Layers,
   MapPinned,
   Users,
 } from 'lucide-react'
-import { ScopeProvider } from '../../context/ScopeContext'
-import { MonthProvider } from '../../context/MonthContext'
 import { ScopeToggle } from './ScopeToggle'
 import { MonthToggle } from './MonthToggle'
 import { ContextHint } from './ContextHint'
@@ -20,6 +19,7 @@ import { TerritoryBackground } from '../map/TerritoryBackground'
 import { theme } from '../../lib/theme'
 
 const nav = [
+  { to: '/territorial', label: 'Entrada territorial', icon: Compass },
   { to: '/', label: 'Visão executiva', icon: Activity },
   { to: '/territorio', label: 'Território', icon: MapPinned },
   { to: '/setores', label: 'Setores', icon: Layers },
@@ -42,7 +42,7 @@ function handleSidebarNavMouseDown(event: React.MouseEvent<HTMLAnchorElement>) {
   }
 }
 
-function AppShellLayout() {
+export function AppShell() {
   const [searchParams] = useSearchParams()
 
   return (
@@ -158,15 +158,5 @@ function AppShellLayout() {
         </main>
       </div>
     </div>
-  )
-}
-
-export function AppShell() {
-  return (
-    <ScopeProvider>
-      <MonthProvider>
-        <AppShellLayout />
-      </MonthProvider>
-    </ScopeProvider>
   )
 }
