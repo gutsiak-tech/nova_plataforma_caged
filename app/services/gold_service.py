@@ -10,6 +10,7 @@ import pandas as pd
 
 from app.core.config import API_LOG_FILE, DEFAULT_ANO, DEFAULT_MES, GOLD_CAGED_DIR, PROJECT_ROOT
 from app.core.logging import setup_logger
+from app.services.gold_catalog_service import CURRENT_PIPELINE_TABLES
 
 logger = setup_logger("api.gold", API_LOG_FILE)
 
@@ -19,10 +20,26 @@ Scope = Literal["br", "pr", "rmc"]
 # Tabelas geradas apenas no recorte Brasil (sem sufixo _pr/_rmc).
 BR_ONLY_TABLES = frozenset({"tabela_resumo"})
 
+
+def _logical_table_name(table_name: str) -> str:
+    for suffix in ("_rmc", "_pr"):
+        if table_name.endswith(suffix):
+            return table_name[: -len(suffix)]
+    return table_name
+
+
+ALLOWED_GOLD_TABLES = frozenset(
+    _logical_table_name(table_name) for table_name in CURRENT_PIPELINE_TABLES
+)
+
 ANO_MIN = 2000
 ANO_MAX = 2100
 MES_MIN = 1
 MES_MAX = 12
+
+
+class InvalidGoldTableError(ValueError):
+    """Nome lógico de tabela fora do contrato público da Gold."""
 
 
 @dataclass(frozen=True)
@@ -70,7 +87,14 @@ def _suffix_for_scope(scope: Scope) -> str:
     raise ValueError(f"Scope inválido: {scope}")
 
 
+def validate_gold_table_name(base_name: str) -> str:
+    if base_name not in ALLOWED_GOLD_TABLES:
+        raise InvalidGoldTableError("Tabela Gold inválida.")
+    return base_name
+
+
 def _table_stem(base_name: str, scope: Scope) -> str:
+    validate_gold_table_name(base_name)
     suffix = _suffix_for_scope(scope)
     return f"{base_name}{suffix}"
 
@@ -99,10 +123,20 @@ def resolve_gold_table_paths(
     scope: Scope,
 ) -> GoldTablePaths:
     stem = _table_stem(base_name, scope)
+    month_dir = month.dir.resolve()
+    csv_path = (month.dir / f"{stem}.csv").resolve()
+    parquet_path = (month.dir / f"{stem}.parquet").resolve()
+
+    try:
+        csv_path.relative_to(month_dir)
+        parquet_path.relative_to(month_dir)
+    except ValueError as exc:
+        raise InvalidGoldTableError("Tabela Gold inválida.") from exc
+
     return GoldTablePaths(
         table_name=stem,
-        csv_path=month.dir / f"{stem}.csv",
-        parquet_path=month.dir / f"{stem}.parquet",
+        csv_path=csv_path,
+        parquet_path=parquet_path,
     )
 
 

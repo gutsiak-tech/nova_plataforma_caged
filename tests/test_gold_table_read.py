@@ -167,7 +167,7 @@ def test_read_gold_table_raises_when_neither_format_exists(monkeypatch, tmp_path
     month = GoldMonthRef(ano=2026, mes=2)
 
     with pytest.raises(FileNotFoundError, match="Tabela Gold não encontrada"):
-        read_gold_table(month, "tabela_inexistente", "br")
+        read_gold_table(month, "tabela_setor", "br")
 
 
 def test_table_endpoint_structure_unchanged_with_parquet(monkeypatch, tmp_path):
@@ -301,7 +301,7 @@ def test_table_not_found_returns_gold_table_not_found(monkeypatch, tmp_path):
     monkeypatch.setattr("app.services.gold_service.GOLD_CAGED_DIR", gold_root)
 
     response = client.get(
-        "/api/gold/v1/table/tabela_inexistente?scope=br&ano=2026&mes=2"
+        "/api/gold/v1/table/tabela_setor?scope=br&ano=2026&mes=2"
     )
     assert response.status_code == 404
     body = response.json()

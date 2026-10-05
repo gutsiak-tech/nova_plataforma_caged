@@ -19,6 +19,7 @@ from app.services.gold_catalog_service import (
 from app.services.gold_service import (
     CompetenciaNotFoundError,
     GoldMonthRef,
+    InvalidGoldTableError,
     Scope,
     competencia_is_available,
     dataframe_to_records,
@@ -31,6 +32,7 @@ from app.services.gold_service import (
     read_gold_table,
     relative_project_path,
     resolve_gold_month,
+    validate_gold_table_name,
 )
 
 router = APIRouter(prefix="/api/gold/v1", tags=["gold"])
@@ -56,6 +58,17 @@ def _resolve_month(ano: int | None, mes: int | None) -> GoldMonthRef:
         raise GoldAPIError(
             "INVALID_COMPETENCIA",
             str(exc),
+            status_code=400,
+        ) from exc
+
+
+def _validate_table(base_name: str) -> None:
+    try:
+        validate_gold_table_name(base_name)
+    except InvalidGoldTableError as exc:
+        raise GoldAPIError(
+            "INVALID_TABLE",
+            "Tabela Gold inválida.",
             status_code=400,
         ) from exc
 
@@ -242,6 +255,7 @@ def table(
     sort_dir: str = Query("desc"),
 ):
     sc = _parse_scope(scope)
+    _validate_table(base_name)
     month = _resolve_month(ano, mes)
     _ensure_competencia(month)
 
