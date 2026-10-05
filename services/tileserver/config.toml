@@ -1,0 +1,39 @@
+[webserver]
+port = ":8080"
+
+[[providers]]
+name = "plataforma_postgis"
+type = "postgis"
+
+uri = "postgres://postgres:postgres@postgres:5432/plataforma?sslmode=disable"
+
+srid = 4326
+
+  [[providers.layers]]
+  name = "saldo_municipio"
+
+  geometry_fieldname = "geom"
+  geometry_type = "MultiPolygon"
+  id_fieldname = "municipio_norm"
+
+  sql = """
+    SELECT
+      municipio,
+      municipio_norm,
+      uf,
+      ano,
+      mes,
+      saldo,
+      geom
+    FROM serving.mv_mapa_saldo_municipio
+    WHERE geom && !BBOX!
+      AND ano = 2026
+      AND mes = 1
+      AND uf = 'PARANÁ'
+  """
+
+[[maps]]
+name = "municipios"
+
+  [[maps.layers]]
+  provider_layer = "plataforma_postgis.saldo_municipio"
