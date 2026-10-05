@@ -369,10 +369,27 @@ def overview(
             path = get_table_csv_path(month, base_name=base_name, scope=sc)
             raise _table_not_found_error(month, base_name, sc, path) from exc
 
+    def _territorial_salary_median() -> float | None:
+        try:
+            summary = read_gold_table(
+                month,
+                base_name="tabela_resumo_salario",
+                scope=sc,
+            )
+        except FileNotFoundError:
+            return None
+        if "salario_mediano" not in summary.columns or summary.empty:
+            return None
+        values = pd.to_numeric(summary["salario_mediano"], errors="coerce").dropna()
+        return float(values.iloc[0]) if len(values) else None
+
     payload = {
         "month": {"ano": month.ano, "mes": month.mes},
         "scope": sc,
         "resumo": resumo_row,
+        "salary_summary": {
+            "median": _territorial_salary_median(),
+        },
         "rankings": {
             "uf": _safe_top_rows("tabela_uf", limit=12) if sc == "br" else None,
             "municipio": _safe_top_rows("tabela_municipio", limit=15),

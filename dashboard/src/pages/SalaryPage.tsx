@@ -16,6 +16,7 @@ import { useMonth } from '../context/MonthContext'
 import { chartTheme } from '../lib/chartTheme'
 import { formatCurrencyBRL, labelScope } from '../lib/format'
 import { buildRequestContextKey, responseMatchesRequest } from '../lib/requestContext'
+import { getTerritorialSalaryMedian } from '../lib/salarySummary'
 import { theme } from '../lib/theme'
 import { useContextPayload } from '../lib/useContextPayload'
 import { useScopeStableLoading } from '../lib/useScopeStableLoading'
@@ -252,7 +253,7 @@ export function SalaryPage() {
     return <LoadingState label="Carregando indicadores de salário..." />
   }
 
-  const salSexo = ov.salary_profiles[GOLD_COLUMNS.SEXO]?.[0]
+  const territorialMedian = getTerritorialSalaryMedian(ov)
 
   return (
     <div className={['space-y-10', shellClass].filter(Boolean).join(' ')}>
@@ -264,12 +265,12 @@ export function SalaryPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className={theme.kpiTile.baseClass}>
-          <p className={theme.kpiTile.labelClass}>Mediana (1º grupo)</p>
+          <p className={theme.kpiTile.labelClass}>Mediana salarial</p>
           <p
             className={[theme.kpiTile.valueClass, theme.kpiTile.toneNeutral].join(' ')}
-            aria-label={`Mediana salarial: ${formatCurrencyBRL(salSexo?.[GOLD_COLUMNS.SALARIO_MEDIANO])}`}
+            aria-label={`Mediana salarial: ${formatCurrencyBRL(territorialMedian)}`}
           >
-            {formatCurrencyBRL(salSexo?.[GOLD_COLUMNS.SALARIO_MEDIANO])}
+            {formatCurrencyBRL(territorialMedian)}
           </p>
           <p className={theme.kpiTile.hintClass}>Mediana salarial no recorte selecionado.</p>
         </div>

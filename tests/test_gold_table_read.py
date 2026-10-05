@@ -36,6 +36,7 @@ _OVERVIEW_TABLE_BASES = (
     "tabela_perfil_sexo_salario",
     "tabela_perfil_faixa_etaria_salario",
     "tabela_perfil_graudeinstrucao_salario",
+    "tabela_resumo_salario",
     "tabela_perfil_sexo_faixa_etaria_salario",
     "tabela_perfil_sexo_instrucao_salario",
     "tabela_perfil_faixa_etaria_instrucao_salario",
@@ -83,6 +84,15 @@ def _setup_overview_pr_gold(gold_root):
         {"uf": ["PR"], "saldo": [10], "admissoes": [6], "desligamentos": [4]}
     ).to_csv(month_dir / "tabela_uf.csv", index=False)
     _write_overview_scope_tables(month_dir, "_pr")
+    return month_dir
+
+
+def _setup_overview_br_gold(gold_root):
+    month_dir = _setup_month_dir(gold_root)
+    _write_overview_scope_tables(month_dir, "")
+    pd.DataFrame(
+        {"uf": ["PR"], "saldo": [10], "admissoes": [6], "desligamentos": [4]}
+    ).to_csv(month_dir / "tabela_uf.csv", index=False)
     return month_dir
 
 
@@ -359,6 +369,48 @@ def test_overview_rmc_does_not_read_tabela_resumo_with_scope_rmc(monkeypatch, tm
     assert ("tabela_resumo", "pr") not in calls
     assert ("tabela_resumo", "rmc") not in calls
     assert response.json()["resumo"]["saldo"] == 8.0
+
+
+@pytest.mark.parametrize(
+    ("scope", "expected"),
+    [("br", 2000.0), ("pr", 2100.0), ("rmc", 2200.0)],
+)
+def test_overview_exposes_territorial_salary_median(monkeypatch, tmp_path, scope, expected):
+    gold_root = tmp_path / "gold" / "caged"
+    setup = {
+        "br": _setup_overview_br_gold,
+        "pr": _setup_overview_pr_gold,
+        "rmc": _setup_overview_rmc_gold,
+    }[scope]
+    month_dir = setup(gold_root)
+    suffix = "" if scope == "br" else f"_{scope}"
+    pd.DataFrame(
+        {"n_salarios_validos": [5], "salario_mediano": [expected]}
+    ).to_csv(month_dir / f"tabela_resumo_salario{suffix}.csv", index=False)
+    _patch_gold_root(monkeypatch, gold_root)
+
+    response = client.get(f"/api/gold/v1/overview?scope={scope}&ano=2026&mes=2")
+
+    assert response.status_code == 200
+    assert response.json()["salary_summary"] == {"median": expected}
+
+
+def test_overview_does_not_fallback_to_first_sex_group_median(monkeypatch, tmp_path):
+    gold_root = tmp_path / "gold" / "caged"
+    month_dir = _setup_overview_br_gold(gold_root)
+    (month_dir / "tabela_resumo_salario.csv").unlink()
+    pd.DataFrame(
+        [
+            {"sexo": "Mulher", "saldo": 100, "salario_mediano": 1900.0},
+            {"sexo": "Homem", "saldo": 50, "salario_mediano": 2079.17},
+        ]
+    ).to_csv(month_dir / "tabela_perfil_sexo_salario.csv", index=False)
+    _patch_gold_root(monkeypatch, gold_root)
+
+    response = client.get("/api/gold/v1/overview?scope=br&ano=2026&mes=2")
+
+    assert response.status_code == 200
+    assert response.json()["salary_summary"] == {"median": None}
 
 
 def test_overview_pr_emits_no_missing_resumo_error_log(monkeypatch, tmp_path, caplog):

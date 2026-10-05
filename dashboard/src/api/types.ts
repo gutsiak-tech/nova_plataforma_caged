@@ -29,6 +29,9 @@ export type OverviewResponse = {
   month: { ano: number; mes: number }
   scope: Scope
   resumo: GoldRow | null
+  salary_summary: {
+    median: number | null
+  }
   rankings: {
     uf: GoldRow[] | null
     municipio: GoldRow[]

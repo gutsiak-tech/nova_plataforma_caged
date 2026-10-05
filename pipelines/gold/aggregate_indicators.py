@@ -197,6 +197,26 @@ def agregar_movimentacao_salario(
     return ordenar_tabela(tabela)
 
 
+def agregar_resumo_salario(
+    df: pd.DataFrame,
+    salario_col: str = "salario",
+) -> pd.DataFrame:
+    """Calcula a mediana diretamente sobre o universo territorial recebido."""
+    columns = ["n_salarios_validos", "salario_mediano"]
+    if df.empty or salario_col not in df.columns:
+        return pd.DataFrame(columns=columns)
+
+    salarios = df[salario_col]
+    return pd.DataFrame(
+        [
+            {
+                "n_salarios_validos": int(salarios.notna().sum()),
+                "salario_mediano": salarios.median(),
+            }
+        ]
+    )
+
+
 def salvar_se_nao_vazia(df: pd.DataFrame, output_dir: Path, nome_arquivo: str) -> None:
     if df is not None and not df.empty:
         salvar_tabela(df, output_dir, nome_arquivo)
@@ -355,6 +375,10 @@ def run_aggregate_indicators(ano: int = DEFAULT_ANO, mes: int = DEFAULT_MES) -> 
     tabela_perfil_graudeinstrucao_salario_pr = agregar_movimentacao_salario(df_pr, ["graudeinstrucao"]) if "graudeinstrucao" in df_pr.columns else pd.DataFrame()
     tabela_perfil_graudeinstrucao_salario_rmc = agregar_movimentacao_salario(df_rmc, ["graudeinstrucao"]) if "graudeinstrucao" in df_rmc.columns else pd.DataFrame()
 
+    tabela_resumo_salario = agregar_resumo_salario(df)
+    tabela_resumo_salario_pr = agregar_resumo_salario(df_pr)
+    tabela_resumo_salario_rmc = agregar_resumo_salario(df_rmc)
+
     tabela_perfil_sexo_faixa_etaria_salario = (
         agregar_movimentacao_salario(df, ["sexo", "faixa_etaria"])
         if {"sexo", "faixa_etaria"}.issubset(df.columns) else pd.DataFrame()
@@ -453,6 +477,10 @@ def run_aggregate_indicators(ano: int = DEFAULT_ANO, mes: int = DEFAULT_MES) -> 
         "tabela_perfil_graudeinstrucao_salario_pr": tabela_perfil_graudeinstrucao_salario_pr,
         "tabela_perfil_graudeinstrucao_salario_rmc": tabela_perfil_graudeinstrucao_salario_rmc,
 
+        "tabela_resumo_salario": tabela_resumo_salario,
+        "tabela_resumo_salario_pr": tabela_resumo_salario_pr,
+        "tabela_resumo_salario_rmc": tabela_resumo_salario_rmc,
+
         "tabela_perfil_sexo_faixa_etaria_salario": tabela_perfil_sexo_faixa_etaria_salario,
         "tabela_perfil_sexo_faixa_etaria_salario_pr": tabela_perfil_sexo_faixa_etaria_salario_pr,
         "tabela_perfil_sexo_faixa_etaria_salario_rmc": tabela_perfil_sexo_faixa_etaria_salario_rmc,
@@ -517,6 +545,10 @@ def run_aggregate_indicators(ano: int = DEFAULT_ANO, mes: int = DEFAULT_MES) -> 
         "ins_sal": tabela_perfil_graudeinstrucao_salario,
         "ins_sal_pr": tabela_perfil_graudeinstrucao_salario_pr,
         "ins_sal_rmc": tabela_perfil_graudeinstrucao_salario_rmc,
+
+        "resumo_sal": tabela_resumo_salario,
+        "resumo_sal_pr": tabela_resumo_salario_pr,
+        "resumo_sal_rmc": tabela_resumo_salario_rmc,
 
         "sx_fx_sal": tabela_perfil_sexo_faixa_etaria_salario,
         "sx_fx_sal_pr": tabela_perfil_sexo_faixa_etaria_salario_pr,
