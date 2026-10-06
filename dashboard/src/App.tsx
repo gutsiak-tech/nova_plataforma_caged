@@ -25,6 +25,9 @@ const AboutDataPage = lazy(() =>
 const TerritorialLandingPage = lazy(() =>
   import('./pages/TerritorialLandingPage').then((m) => ({ default: m.TerritorialLandingPage })),
 )
+const TerritorialDetailPage = lazy(() =>
+  import('./pages/TerritorialDetailPage').then((m) => ({ default: m.TerritorialDetailPage })),
+)
 
 function PageFallback() {
   return <LoadingState label="Carregando página..." />
@@ -40,6 +43,14 @@ export default function App() {
             element={
               <Suspense fallback={<PageFallback />}>
                 <TerritorialLandingPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="territorial/:territory"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <TerritorialDetailPage />
               </Suspense>
             }
           />

@@ -7,6 +7,7 @@ import type { OverviewResponse, Scope } from '../api/types'
 import { TerritorySummaryPanel } from '../components/territorial/TerritorySummaryPanel'
 import { useMonth } from '../context/MonthContext'
 import { useScope } from '../context/ScopeContext'
+import { territorialSlug } from '../lib/territorialRoute'
 import { TERRITORY_OPTIONS } from '../lib/territorialSummary'
 
 const SCOPES: Scope[] = ['br', 'pr', 'rmc']
@@ -54,7 +55,10 @@ export function TerritorialLandingPage() {
 
   function openDetailedView() {
     setScope(selected)
-    navigate({ pathname: '/', search: searchParams.toString() })
+    navigate({
+      pathname: `/territorial/${territorialSlug(selected)}`,
+      search: searchParams.toString(),
+    })
   }
 
   return (
