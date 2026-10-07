@@ -18,6 +18,21 @@ import {
 type StageFrame = TerritorialStageBox & {
   poseKey: 'landing' | 'detail'
   duration: number
+  landing: TerritorialStageBox
+  detail: TerritorialStageBox
+}
+
+function measureNode(node: HTMLElement | null, root: HTMLElement): TerritorialStageBox | null {
+  if (!node) return null
+  const slotRect = node.getBoundingClientRect()
+  const rootRect = root.getBoundingClientRect()
+  if (slotRect.width < 2 || slotRect.height < 2) return null
+  return {
+    left: slotRect.left - rootRect.left,
+    top: slotRect.top - rootRect.top,
+    width: slotRect.width,
+    height: slotRect.height,
+  }
 }
 
 function sameBox(a: TerritorialStageBox, b: TerritorialStageBox): boolean {
@@ -58,23 +73,22 @@ export function TerritorialExperience() {
     setSlotsReady((value) => value + 1)
   }, [])
 
-  const measure = useCallback((): TerritorialStageBox | null => {
-    const slot = (poseKey === 'detail' ? detailNode : landingNode).current
+  const readPair = useCallback(() => {
     const root = rootRef.current
-    if (!slot || !root) return null
-    const slotRect = slot.getBoundingClientRect()
-    const rootRect = root.getBoundingClientRect()
-    if (slotRect.width < 2 || slotRect.height < 2) return null
+    if (!root) return null
+    const landing = measureNode(landingNode.current, root)
+    const detail = measureNode(detailNode.current, root)
+    const active = poseKey === 'detail' ? detail : landing
+    if (!active) return null
     return {
-      left: slotRect.left - rootRect.left,
-      top: slotRect.top - rootRect.top,
-      width: slotRect.width,
-      height: slotRect.height,
+      active,
+      landing: landing ?? active,
+      detail: detail ?? active,
     }
   }, [poseKey])
 
   useLayoutEffect(() => {
-    const next = measure()
+    const next = readPair()
     if (!next) {
       setFrame((current) => {
         const slot = (poseKey === 'detail' ? detailNode : landingNode).current
@@ -83,12 +97,27 @@ export function TerritorialExperience() {
       })
     } else {
       setFrame((current) => {
-        if (current == null) return { ...next, poseKey, duration: 0 }
+        const pair = { landing: next.landing, detail: next.detail }
+        if (current == null) return { ...next.active, poseKey, duration: 0, ...pair }
         if (current.poseKey !== poseKey) {
-          return { ...next, poseKey, duration: territorialMoveDuration(reduced) }
+          return {
+            ...next.active,
+            poseKey,
+            duration: territorialMoveDuration(reduced),
+            landing: current.landing,
+            detail: current.detail,
+          }
         }
-        if (current.duration > 0) return { ...next, poseKey, duration: current.duration }
-        return { ...next, poseKey, duration: 0 }
+        if (current.duration > 0) {
+          return {
+            ...next.active,
+            poseKey,
+            duration: current.duration,
+            landing: current.landing,
+            detail: current.detail,
+          }
+        }
+        return { ...next.active, poseKey, duration: 0, ...pair }
       })
     }
 
@@ -96,31 +125,49 @@ export function TerritorialExperience() {
     const root = rootRef.current
     if (!slot || !root) return
     const follow = () => {
-      const resized = measure()
+      const resized = readPair()
       if (!resized) return
       setFrame((current) => {
         if (!current || current.duration > 0) return current
-        if (sameBox(current, resized)) return current
-        return { ...resized, poseKey: current.poseKey, duration: 0 }
+        if (sameBox(current, resized.active) && sameBox(current.landing, resized.landing) && sameBox(current.detail, resized.detail)) {
+          return current
+        }
+        return {
+          ...resized.active,
+          poseKey: current.poseKey,
+          duration: 0,
+          landing: resized.landing,
+          detail: resized.detail,
+        }
       })
     }
     const observer = new ResizeObserver(follow)
     observer.observe(slot)
     observer.observe(root)
+    const landingSlot = landingNode.current
+    const detailSlot = detailNode.current
+    if (landingSlot && landingSlot !== slot) observer.observe(landingSlot)
+    if (detailSlot && detailSlot !== slot) observer.observe(detailSlot)
     const layer = slot.closest('.territorial-experience-layer')
     layer?.addEventListener('scroll', follow, { passive: true })
     return () => {
       observer.disconnect()
       layer?.removeEventListener('scroll', follow)
     }
-  }, [measure, poseKey, reduced, scope, slotsReady])
+  }, [readPair, poseKey, reduced, scope, slotsReady])
 
   function releaseMove() {
     setFrame((current) => {
       if (!current || current.duration === 0) return current
-      const next = measure()
+      const next = readPair()
       if (!next) return { ...current, duration: 0 }
-      return { ...next, poseKey: current.poseKey, duration: 0 }
+      return {
+        ...next.active,
+        poseKey: current.poseKey,
+        duration: 0,
+        landing: next.landing,
+        detail: next.detail,
+      }
     })
   }
 
@@ -129,6 +176,8 @@ export function TerritorialExperience() {
   }
 
   const activeModel = mapModel?.scope === scope ? mapModel : null
+  const posePending = frame != null && frame.poseKey !== poseKey
+  const stageDuration = frame == null ? 0 : posePending ? moveMs : frame.duration
 
   return (
     <div ref={rootRef} className="territorial-experience">
@@ -171,7 +220,9 @@ export function TerritorialExperience() {
           scope={scope}
           pose={poseKey}
           box={frame}
-          duration={frame.duration}
+          landingBox={frame.landing}
+          detailBox={frame.detail}
+          duration={stageDuration}
           reducedMotion={reduced}
           model={activeModel}
           onMoveComplete={releaseMove}
