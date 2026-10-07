@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import clsx from 'clsx'
 import type { Competencia, OverviewResponse, Scope } from '../../api/types'
@@ -9,8 +10,6 @@ import {
   topSectorAdmissions,
   uniqueLeadingSector,
 } from '../../lib/territorialSummary'
-import { TerritoryMiniMap } from './TerritoryMiniMap'
-
 type TerritorySummaryPanelProps = {
   scope: Scope
   overview: OverviewResponse | null
@@ -22,6 +21,7 @@ type TerritorySummaryPanelProps = {
   competencia: string
   competencias: Competencia[]
   onCompetenciaChange: (competencia: string) => void
+  mapSlot: ReactNode
 }
 
 function Kpi({
@@ -59,6 +59,7 @@ export function TerritorySummaryPanel({
   competencia,
   competencias,
   onCompetenciaChange,
+  mapSlot,
 }: TerritorySummaryPanelProps) {
   const territory = territoryOption(scope)
   const kpis = overview ? territorialKpis(overview) : null
@@ -157,12 +158,7 @@ export function TerritorySummaryPanel({
                 className="lg:pt-2"
               />
             </div>
-            <div className="flex min-h-[12rem] items-center justify-center">
-              <TerritoryMiniMap
-                scope={scope}
-                className="aspect-square h-[min(18rem,68vw)] w-auto max-w-full lg:h-[clamp(20rem,48vh,32rem)]"
-              />
-            </div>
+            <div className="flex min-h-[12rem] items-center justify-center">{mapSlot}</div>
           </div>
 
           <footer className="mt-[clamp(1.05rem,2.1vh,1.4rem)] flex shrink-0 flex-col gap-3 border-t border-[#e4dfd4] pt-[clamp(0.35rem,0.55vh,0.45rem)] lg:flex-row lg:items-end lg:justify-between">

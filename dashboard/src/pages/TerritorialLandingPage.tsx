@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import { motion } from 'framer-motion'
@@ -7,17 +7,24 @@ import type { OverviewResponse, Scope } from '../api/types'
 import { TerritorySummaryPanel } from '../components/territorial/TerritorySummaryPanel'
 import { useMonth } from '../context/MonthContext'
 import { useScope } from '../context/ScopeContext'
-import { territorialSlug } from '../lib/territorialRoute'
+import { territorialDetailLocation } from '../lib/territorialPose'
 import { TERRITORY_OPTIONS } from '../lib/territorialSummary'
 
 const SCOPES: Scope[] = ['br', 'pr', 'rmc']
 
-export function TerritorialLandingPage() {
+export function TerritorialLandingPage({
+  selected,
+  onSelectedChange,
+  mapSlot,
+}: {
+  selected: Scope
+  onSelectedChange: (scope: Scope) => void
+  mapSlot: ReactNode
+}) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { setScope } = useScope()
   const { ano, mes, label, competencia, competencias, setCompetencia } = useMonth()
-  const [selected, setSelected] = useState<Scope>('br')
   const [retryKey, setRetryKey] = useState(0)
   const requestKey = `${ano}-${mes}-${retryKey}`
   const [loaded, setLoaded] = useState<{
@@ -55,10 +62,7 @@ export function TerritorialLandingPage() {
 
   function openDetailedView() {
     setScope(selected)
-    navigate({
-      pathname: `/territorial/${territorialSlug(selected)}`,
-      search: searchParams.toString(),
-    })
+    navigate(territorialDetailLocation(selected, searchParams.toString()))
   }
 
   return (
@@ -105,7 +109,7 @@ export function TerritorialLandingPage() {
                     type="button"
                     role="radio"
                     aria-checked={active}
-                    onClick={() => setSelected(option.id)}
+                    onClick={() => onSelectedChange(option.id)}
                     className={clsx(
                       'group flex items-center gap-4 py-1 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ebc617]',
                       active ? 'text-[#1a2130]' : 'text-[#c5c9d1] hover:text-[#8b93a3]',
@@ -153,6 +157,7 @@ export function TerritorialLandingPage() {
             competencia={competencia}
             competencias={competencias}
             onCompetenciaChange={setCompetencia}
+            mapSlot={mapSlot}
           />
         </motion.section>
       </div>

@@ -42,12 +42,40 @@ function featureTitle(
   return { primary: municipio, secondary: uf }
 }
 
+export type TerritoryTooltipContent = {
+  primary: string
+  secondary?: string
+  admissions?: string
+  dismissals?: string
+  saldoText?: string
+  saldoColor?: string
+}
+
+export function describeTerritoryTooltip(
+  properties: GeoFeatureProperties,
+  scope: Scope,
+  metric: TerritoryMetricRow | undefined,
+): TerritoryTooltipContent {
+  const { primary, secondary } = featureTitle(properties, scope, metric)
+  if (!metric) return { primary, secondary }
+  const saldo = metric[GOLD_COLUMNS.SALDO]
+  return {
+    primary,
+    secondary,
+    admissions: formatInt(metric[GOLD_COLUMNS.ADMISSOES]),
+    dismissals: formatInt(metric[GOLD_COLUMNS.DESLIGAMENTOS]),
+    saldoText: formatSignedInt(saldo),
+    saldoColor: saldoColor(saldo),
+  }
+}
+
 export function buildTerritoryTooltipHtml(
   properties: GeoFeatureProperties,
   scope: Scope,
   metric: TerritoryMetricRow | undefined,
 ): string {
-  const { primary, secondary } = featureTitle(properties, scope, metric)
+  const content = describeTerritoryTooltip(properties, scope, metric)
+  const { primary, secondary } = content
 
   if (!metric) {
     return `
@@ -59,9 +87,8 @@ export function buildTerritoryTooltipHtml(
     `
   }
 
-  const saldo = metric[GOLD_COLUMNS.SALDO]
-  const saldoText = formatSignedInt(saldo)
-  const saldoStyle = `color:${saldoColor(saldo)}`
+  const saldoText = content.saldoText ?? ''
+  const saldoStyle = `color:${content.saldoColor ?? SALDO_NEUTRAL}`
 
   return `
     <div class="territory-map-tooltip__body">

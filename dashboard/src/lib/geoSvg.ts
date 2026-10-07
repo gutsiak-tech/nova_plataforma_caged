@@ -76,6 +76,14 @@ export function computeGeoBounds(
   return { minLon, maxLon, minLat, maxLat }
 }
 
+/** Uma escala só para longitude e latitude. O território nunca é esticado. */
+export function uniformProjectionScale(bounds: GeoBounds): number {
+  const lonSpan = Math.max(bounds.maxLon - bounds.minLon, 0.0001)
+  const latSpan = Math.max(bounds.maxLat - bounds.minLat, 0.0001)
+  const inner = VIEW_SIZE - VIEW_PADDING * 2
+  return Math.min(inner / lonSpan, inner / latSpan)
+}
+
 function projectPoint(
   lon: number,
   lat: number,
@@ -83,8 +91,7 @@ function projectPoint(
 ): [number, number] {
   const lonSpan = Math.max(bounds.maxLon - bounds.minLon, 0.0001)
   const latSpan = Math.max(bounds.maxLat - bounds.minLat, 0.0001)
-  const inner = VIEW_SIZE - VIEW_PADDING * 2
-  const scale = Math.min(inner / lonSpan, inner / latSpan)
+  const scale = uniformProjectionScale(bounds)
   const drawW = lonSpan * scale
   const drawH = latSpan * scale
   const offsetX = (VIEW_SIZE - drawW) / 2

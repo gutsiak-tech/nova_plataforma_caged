@@ -1,19 +1,21 @@
-import { useEffect, useState } from 'react'
-import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useState, type Ref } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { fetchOverview, fetchTable } from '../api/gold'
 import { GOLD_COLUMNS } from '../api/goldColumns'
 import { GOLD_TABLES } from '../api/goldTables'
-import type { OverviewResponse, TableResponse } from '../api/types'
-import { TerritorialDetailMap } from '../components/territorial/TerritorialDetailMap'
+import type { GoldRow, OverviewResponse, Scope, TableResponse } from '../api/types'
+import type { TerritorialMapModel } from '../components/territorial/TerritorialMapStage'
 import { TerritorialDetailPanel } from '../components/territorial/TerritorialDetailPanel'
 import { useMonth } from '../context/MonthContext'
 import { useScope } from '../context/ScopeContext'
 import { fetchCompleteTable } from '../lib/completeTable'
 import { rankTerritorialUnits, TERRITORIAL_GEOGRAPHY } from '../lib/territorialDetail'
 import { buildRequestContextKey, responseMatchesRequest } from '../lib/requestContext'
-import { resolveTerritorialSlug } from '../lib/territorialRoute'
+import { territorialLandingLocation } from '../lib/territorialPose'
 import { territoryOption } from '../lib/territorialSummary'
+
+const EMPTY_ROWS: GoldRow[] = []
 
 type DetailPayload = {
   key: string
@@ -23,23 +25,31 @@ type DetailPayload = {
   tableError: boolean
 }
 
-export function TerritorialDetailPage() {
-  const { territory: territorySlug } = useParams()
-  const scope = resolveTerritorialSlug(territorySlug)
+export function TerritorialDetailPage({
+  scope,
+  active,
+  mapSlotRef,
+  onMapModel,
+}: {
+  scope: Scope
+  active: boolean
+  mapSlotRef: Ref<HTMLDivElement>
+  onMapModel: (model: TerritorialMapModel) => void
+}) {
   const [searchParams] = useSearchParams()
   const { setScope } = useScope()
   const { ano, mes, label, competencia, competencias, setCompetencia } = useMonth()
   const [retryKey, setRetryKey] = useState(0)
-  const requestKey = scope ? buildRequestContextKey(scope, ano, mes) : null
+  const requestKey = buildRequestContextKey(scope, ano, mes)
   const [loaded, setLoaded] = useState<DetailPayload | null>(null)
+  const retry = useCallback(() => setRetryKey((current) => current + 1), [])
 
   useEffect(() => {
-    if (!scope) return
+    if (!active) return
     setScope(scope)
-  }, [scope, setScope])
+  }, [active, scope, setScope])
 
   useEffect(() => {
-    if (!scope || !requestKey) return
     let cancelled = false
     const key = requestKey
     const tableName = scope === 'br' ? GOLD_TABLES.UF : GOLD_TABLES.MUNICIPIO
@@ -78,15 +88,6 @@ export function TerritorialDetailPage() {
     }
   }, [scope, ano, mes, requestKey, retryKey])
 
-  if (!scope || !requestKey) {
-    return (
-      <Navigate
-        to={{ pathname: '/territorial', search: searchParams.toString() }}
-        replace
-      />
-    )
-  }
-
   const ready = loaded?.key === requestKey
   const overview = ready ? loaded.overview : null
   const table = ready ? loaded.table : null
@@ -95,6 +96,19 @@ export function TerritorialDetailPage() {
   const geography = TERRITORIAL_GEOGRAPHY[scope]
   const territory = territoryOption(scope)
   const ranking = table ? rankTerritorialUnits(table.rows, scope) : []
+  const mapLoading = !ready || (!table && !tableError)
+  const mapRows = table?.rows ?? EMPTY_ROWS
+
+  useEffect(() => {
+    onMapModel({
+      scope,
+      rows: mapRows,
+      loading: mapLoading,
+      error: tableError,
+      dataKey: `${requestKey}:${retryKey}`,
+      onRetry: retry,
+    })
+  }, [onMapModel, scope, mapRows, mapLoading, tableError, requestKey, retryKey, retry])
 
   return (
     <div className="flex min-h-dvh flex-col bg-[#f7f5f0] text-[#1a2130] lg:h-dvh lg:overflow-hidden">
@@ -113,7 +127,7 @@ export function TerritorialDetailPage() {
 
         <div className="flex items-center justify-end gap-4 sm:gap-5">
           <Link
-            to={{ pathname: '/territorial', search: searchParams.toString() }}
+            to={territorialLandingLocation(searchParams.toString())}
             aria-label="Voltar à entrada territorial"
             className="inline-flex items-center gap-1.5 text-sm font-medium text-[#5d6678] underline-offset-4 hover:text-[#1a2130] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ebc617]"
           >
@@ -145,26 +159,15 @@ export function TerritorialDetailPage() {
             overview={overview}
             loading={!ready}
             error={overviewError}
-            onRetry={() => setRetryKey((current) => current + 1)}
+            onRetry={retry}
             rankTitle={geography.rankTitle}
             ranking={ranking}
             rankingLoading={!ready || (!table && !tableError)}
             rankingError={tableError}
           />
         </aside>
-        <section
-          className="h-[70vh] min-h-[28rem] min-w-0 lg:h-full lg:min-h-0"
-          aria-label={`Mapa de ${territory.name} por saldo`}
-        >
-          <TerritorialDetailMap
-            key={`${scope}-${retryKey}`}
-            scope={scope}
-            rows={table?.rows ?? []}
-            loading={!ready || (!table && !tableError)}
-            error={tableError}
-            onRetry={() => setRetryKey((current) => current + 1)}
-            dataKey={requestKey}
-          />
+        <section className="h-[70vh] min-h-[28rem] min-w-0 lg:h-full lg:min-h-0">
+          <div ref={mapSlotRef} className="h-full min-h-0 w-full" />
         </section>
       </div>
     </div>

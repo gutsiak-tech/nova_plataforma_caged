@@ -22,11 +22,10 @@ const SalaryPage = lazy(() => import('./pages/SalaryPage').then((m) => ({ defaul
 const AboutDataPage = lazy(() =>
   import('./pages/AboutDataPage').then((m) => ({ default: m.AboutDataPage })),
 )
-const TerritorialLandingPage = lazy(() =>
-  import('./pages/TerritorialLandingPage').then((m) => ({ default: m.TerritorialLandingPage })),
-)
-const TerritorialDetailPage = lazy(() =>
-  import('./pages/TerritorialDetailPage').then((m) => ({ default: m.TerritorialDetailPage })),
+const TerritorialExperience = lazy(() =>
+  import('./components/territorial/TerritorialExperience').then((m) => ({
+    default: m.TerritorialExperience,
+  })),
 )
 
 function PageFallback() {
@@ -42,18 +41,13 @@ export default function App() {
             path="territorial"
             element={
               <Suspense fallback={<PageFallback />}>
-                <TerritorialLandingPage />
+                <TerritorialExperience />
               </Suspense>
             }
-          />
-          <Route
-            path="territorial/:territory"
-            element={
-              <Suspense fallback={<PageFallback />}>
-                <TerritorialDetailPage />
-              </Suspense>
-            }
-          />
+          >
+            <Route index element={<></>} />
+            <Route path=":territory" element={<></>} />
+          </Route>
           <Route element={<AppShell />}>
             <Route
               index

@@ -362,6 +362,45 @@
   }
 }
 
+.territorial-experience {
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+  background: #f7f5f0;
+}
+
+.territorial-experience-layer {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  transition-property: opacity;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.territorial-experience-layer[data-layer='landing'] {
+  z-index: 2;
+}
+
+.territorial-experience-layer[data-layer='detail'] {
+  z-index: 1;
+}
+
+.territorial-experience-layer[data-active='false'] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.territorial-map-stage {
+  position: absolute;
+  z-index: 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .territorial-experience-layer {
+    transition: none;
+  }
+}
+
 .territory-background-fade {
   position: absolute;
   inset: 0;
