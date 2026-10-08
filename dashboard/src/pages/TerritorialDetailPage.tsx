@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type Ref } from 'react'
+import { useCallback, useEffect, useRef, useState, type Ref } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { fetchOverview, fetchTable } from '../api/gold'
@@ -11,6 +11,7 @@ import { useMonth } from '../context/MonthContext'
 import { useScope } from '../context/ScopeContext'
 import { fetchCompleteTable } from '../lib/completeTable'
 import { rankTerritorialUnits, TERRITORIAL_GEOGRAPHY } from '../lib/territorialDetail'
+import type { DetailFirstPaint } from '../components/territorial/territorialFirstPaint'
 import { buildRequestContextKey, responseMatchesRequest } from '../lib/requestContext'
 import { territorialLandingLocation } from '../lib/territorialPose'
 import { territoryOption } from '../lib/territorialSummary'
@@ -30,19 +31,38 @@ export function TerritorialDetailPage({
   active,
   mapSlotRef,
   onMapModel,
+  initialPaint = null,
+  onBindRetry,
 }: {
   scope: Scope
   active: boolean
   mapSlotRef: Ref<HTMLDivElement>
   onMapModel: (model: TerritorialMapModel) => void
+  initialPaint?: DetailFirstPaint | null
+  onBindRetry?: (retry: () => void) => void
 }) {
   const [searchParams] = useSearchParams()
   const { setScope } = useScope()
   const { ano, mes, label, competencia, competencias, setCompetencia } = useMonth()
   const [retryKey, setRetryKey] = useState(0)
   const requestKey = buildRequestContextKey(scope, ano, mes)
-  const [loaded, setLoaded] = useState<DetailPayload | null>(null)
+  const [loaded, setLoaded] = useState<DetailPayload | null>(() =>
+    initialPaint && initialPaint.key === requestKey
+      ? {
+          key: initialPaint.key,
+          overview: initialPaint.overview,
+          table: initialPaint.table,
+          overviewError: initialPaint.overviewError,
+          tableError: initialPaint.tableError,
+        }
+      : null,
+  )
+  const skipReadyFetch = useRef(loaded?.key === requestKey)
   const retry = useCallback(() => setRetryKey((current) => current + 1), [])
+
+  useEffect(() => {
+    onBindRetry?.(retry)
+  }, [onBindRetry, retry])
 
   useEffect(() => {
     if (!active) return
@@ -50,6 +70,10 @@ export function TerritorialDetailPage({
   }, [active, scope, setScope])
 
   useEffect(() => {
+    if (skipReadyFetch.current) {
+      skipReadyFetch.current = false
+      return
+    }
     let cancelled = false
     const key = requestKey
     const tableName = scope === 'br' ? GOLD_TABLES.UF : GOLD_TABLES.MUNICIPIO

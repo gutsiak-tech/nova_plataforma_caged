@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
+import { TerritorialRouteLoading } from './components/territorial/TerritorialRouteLoading'
 import { LoadingState } from './components/ui/LoadingState'
 import { MonthProvider } from './context/MonthContext'
 import { ScopeProvider } from './context/ScopeContext'
@@ -32,15 +33,22 @@ function PageFallback() {
   return <LoadingState label="Carregando página..." />
 }
 
+function isTerritorialPath(pathname: string) {
+  return pathname === '/territorial' || pathname.startsWith('/territorial/')
+}
+
 export default function App() {
+  const { pathname } = useLocation()
+  const territorialPending = isTerritorialPath(pathname) ? <TerritorialRouteLoading /> : null
+
   return (
     <ScopeProvider>
-      <MonthProvider>
+      <MonthProvider pending={territorialPending}>
         <Routes>
           <Route
             path="territorial"
             element={
-              <Suspense fallback={<PageFallback />}>
+              <Suspense fallback={<TerritorialRouteLoading />}>
                 <TerritorialExperience />
               </Suspense>
             }

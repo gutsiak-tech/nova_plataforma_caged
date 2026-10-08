@@ -48,7 +48,13 @@ function readLocationSearchParams(): URLSearchParams {
   return new URLSearchParams(window.location.search)
 }
 
-export function MonthProvider({ children }: { children: ReactNode }) {
+export function MonthProvider({
+  children,
+  pending = null,
+}: {
+  children: ReactNode
+  pending?: ReactNode
+}) {
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedRef = useRef<Competencia | null>(null)
   const skipUrlSyncRef = useRef(false)
@@ -188,13 +194,22 @@ export function MonthProvider({ children }: { children: ReactNode }) {
   )
 
   if (!selected) {
+    const message = loading
+      ? 'Carregando competências disponíveis...'
+      : fetchError
+        ? 'Não foi possível carregar as competências Gold.'
+        : 'Nenhuma competência Gold válida está disponível.'
+    if (pending) {
+      if (loading) return pending
+      return (
+        <div className="flex min-h-dvh items-center justify-center bg-[#f7f5f0] px-6 text-center text-sm text-[#5d6678]">
+          {message}
+        </div>
+      )
+    }
     return (
       <div className="flex min-h-screen items-center justify-center px-6 text-center text-sm text-slate-400">
-        {loading
-          ? 'Carregando competências disponíveis...'
-          : fetchError
-            ? 'Não foi possível carregar as competências Gold.'
-            : 'Nenhuma competência Gold válida está disponível.'}
+        {message}
       </div>
     )
   }

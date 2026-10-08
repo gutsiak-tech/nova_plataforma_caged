@@ -117,4 +117,18 @@ describe('territorial experience contract', () => {
     expect(monthSource).not.toMatch(/territorial|preboot|freezeLanding/i)
     expect(documentSource).not.toMatch(/preboot|territorial-experience/i)
   })
+
+  it('keeps the legacy page loader and gates the territorial route on its own loader', () => {
+    const territorialRoute = files.app.slice(
+      files.app.indexOf('path="territorial"'),
+      files.app.indexOf('<Route element={<AppShell />}>'),
+    )
+    expect(territorialRoute).toContain('TerritorialRouteLoading')
+    expect(territorialRoute).not.toContain('PageFallback')
+    expect(files.app).toContain('Carregando página...')
+    expect(files.experience).toContain('loadTerritorialFirstPaint')
+    expect(files.experience).toContain('TerritorialRouteLoading')
+    expect(files.landing).not.toContain('setTimeout')
+    expect(files.detail).not.toContain('setTimeout')
+  })
 })

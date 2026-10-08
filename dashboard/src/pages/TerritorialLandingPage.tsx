@@ -1,25 +1,30 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import { motion } from 'framer-motion'
-import { fetchOverview } from '../api/gold'
 import type { OverviewResponse, Scope } from '../api/types'
 import { TerritorySummaryPanel } from '../components/territorial/TerritorySummaryPanel'
+import {
+  loadLandingFirstPaint,
+  peekLandingFirstPaint,
+  type LandingFirstPaint,
+} from '../components/territorial/territorialFirstPaint'
 import { useMonth } from '../context/MonthContext'
 import { useScope } from '../context/ScopeContext'
 import { territorialDetailLocation } from '../lib/territorialPose'
+import { scheduleAsyncState } from '../lib/scheduleAsyncState'
 import { TERRITORY_OPTIONS } from '../lib/territorialSummary'
-
-const SCOPES: Scope[] = ['br', 'pr', 'rmc']
 
 export function TerritorialLandingPage({
   selected,
   onSelectedChange,
   mapSlot,
+  initialPaint = null,
 }: {
   selected: Scope
   onSelectedChange: (scope: Scope) => void
   mapSlot: ReactNode
+  initialPaint?: LandingFirstPaint | null
 }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -31,29 +36,46 @@ export function TerritorialLandingPage({
     key: string
     overviews: Partial<Record<Scope, OverviewResponse>>
     error: boolean
-  } | null>(null)
+  } | null>(() => {
+    if (initialPaint) {
+      return {
+        key: initialPaint.key,
+        overviews: initialPaint.overviews,
+        error: initialPaint.error,
+      }
+    }
+    const cached = peekLandingFirstPaint(ano, mes)
+    return cached
+      ? { key: cached.key, overviews: cached.overviews, error: cached.error }
+      : null
+  })
+  const skipReadyFetch = useRef(loaded?.key === requestKey)
+  const [cardEntered, setCardEntered] = useState(false)
 
   useEffect(() => {
+    if (skipReadyFetch.current) {
+      skipReadyFetch.current = false
+      return
+    }
     let cancelled = false
     const key = requestKey
 
-    Promise.all(SCOPES.map((scope) => fetchOverview(scope, ano, mes)))
-      .then((results) => {
-        if (cancelled) return
-        setLoaded({
-          key,
-          overviews: Object.fromEntries(results.map((result) => [result.scope, result])),
-          error: false,
-        })
-      })
-      .catch(() => {
-        if (!cancelled) setLoaded({ key, overviews: {}, error: true })
-      })
+    loadLandingFirstPaint(ano, mes, { bypassCache: retryKey > 0 }).then((result) => {
+      if (cancelled) return
+      setLoaded({ key, overviews: result.overviews, error: result.error })
+    })
 
     return () => {
       cancelled = true
     }
-  }, [ano, mes, requestKey])
+  }, [ano, mes, requestKey, retryKey])
+
+  useEffect(() => {
+    scheduleAsyncState(
+      () => false,
+      () => setCardEntered(true),
+    )
+  }, [])
 
   const ready = loaded?.key === requestKey
   const overviews = ready ? loaded.overviews : {}
@@ -141,7 +163,7 @@ export function TerritorialLandingPage({
 
         <motion.section
           key={selected}
-          initial={{ opacity: 0 }}
+          initial={cardEntered ? { opacity: 0 } : false}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.28, ease: 'easeOut' }}
           className="mt-8 flex min-w-0 flex-col lg:mt-0 lg:h-full lg:min-h-0 lg:justify-center"

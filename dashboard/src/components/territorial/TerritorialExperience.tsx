@@ -1,7 +1,8 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { useReducedMotion } from 'framer-motion'
 import type { Scope } from '../../api/types'
+import { useMonth } from '../../context/MonthContext'
 import { TerritorialDetailPage } from '../../pages/TerritorialDetailPage'
 import { TerritorialLandingPage } from '../../pages/TerritorialLandingPage'
 import {
@@ -14,6 +15,8 @@ import {
   type TerritorialMapModel,
   type TerritorialStageBox,
 } from './TerritorialMapStage'
+import { TerritorialRouteLoading } from './TerritorialRouteLoading'
+import { loadTerritorialFirstPaint, type TerritorialFirstPaint } from './territorialFirstPaint'
 
 type StageFrame = TerritorialStageBox & {
   poseKey: 'landing' | 'detail'
@@ -47,10 +50,15 @@ function sameBox(a: TerritorialStageBox, b: TerritorialStageBox): boolean {
 export function TerritorialExperience() {
   const { pathname } = useLocation()
   const [searchParams] = useSearchParams()
+  const { ano, mes } = useMonth()
   const reduced = useReducedMotion() === true
   const pose = resolveTerritorialPose(pathname)
   const poseKey: 'landing' | 'detail' = pose.kind === 'detail' ? 'detail' : 'landing'
   const detailScope = pose.kind === 'detail' ? pose.scope : null
+  const bootScope: Scope = detailScope ?? 'br'
+  const requestKey = pose.kind === 'invalid' ? null : `${pose.kind}:${bootScope}:${ano}:${mes}`
+  const [paint, setPaint] = useState<TerritorialFirstPaint | null>(null)
+  const detailRetryRef = useRef<() => void>(() => {})
   const [picked, setPicked] = useState<Scope>(detailScope ?? 'br')
   const [mapModel, setMapModel] = useState<TerritorialMapModel | null>(null)
   const [frame, setFrame] = useState<StageFrame | null>(null)
@@ -63,6 +71,37 @@ export function TerritorialExperience() {
   if (detailScope && picked !== detailScope) setPicked(detailScope)
   const search = searchParams.toString()
   const moveMs = territorialMoveDuration(reduced)
+
+  useEffect(() => {
+    if (!requestKey || paint || pose.kind === 'invalid') return
+    let cancelled = false
+    const request =
+      pose.kind === 'detail'
+        ? { kind: 'detail' as const, scope: bootScope, ano, mes }
+        : { kind: 'landing' as const, ano, mes }
+    loadTerritorialFirstPaint(request).then((result) => {
+      if (!cancelled) setPaint((current) => current ?? result)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [requestKey, pose.kind, bootScope, ano, mes, paint])
+
+  const bindDetailRetry = useCallback((retry: () => void) => {
+    detailRetryRef.current = retry
+  }, [])
+
+  const bootModel = useMemo<TerritorialMapModel | null>(() => {
+    if (!paint || paint.kind !== 'detail' || paint.scope !== scope) return null
+    return {
+      scope: paint.scope,
+      rows: paint.table?.rows ?? [],
+      loading: false,
+      error: paint.tableError,
+      dataKey: `${paint.key}:0`,
+      onRetry: () => detailRetryRef.current(),
+    }
+  }, [paint, scope])
 
   const landingSlotRef = useCallback((node: HTMLDivElement | null) => {
     landingNode.current = node
@@ -154,7 +193,7 @@ export function TerritorialExperience() {
       observer.disconnect()
       layer?.removeEventListener('scroll', follow)
     }
-  }, [readPair, poseKey, reduced, scope, slotsReady])
+  }, [readPair, poseKey, reduced, scope, slotsReady, paint])
 
   function releaseMove() {
     setFrame((current) => {
@@ -175,7 +214,9 @@ export function TerritorialExperience() {
     return <Navigate to={territorialLandingLocation(search)} replace />
   }
 
-  const activeModel = mapModel?.scope === scope ? mapModel : null
+  if (!paint) return <TerritorialRouteLoading />
+
+  const activeModel = mapModel?.scope === scope ? mapModel : bootModel
   const posePending = frame != null && frame.poseKey !== poseKey
   const stageDuration = frame == null ? 0 : posePending ? moveMs : frame.duration
 
@@ -192,6 +233,7 @@ export function TerritorialExperience() {
         <TerritorialLandingPage
           selected={scope}
           onSelectedChange={setPicked}
+          initialPaint={paint.kind === 'landing' ? paint : null}
           mapSlot={
             <div
               ref={landingSlotRef}
@@ -213,6 +255,8 @@ export function TerritorialExperience() {
           active={poseKey === 'detail'}
           mapSlotRef={detailSlotRef}
           onMapModel={setMapModel}
+          initialPaint={paint.kind === 'detail' ? paint : null}
+          onBindRetry={bindDetailRetry}
         />
       </div>
       {frame ? (
