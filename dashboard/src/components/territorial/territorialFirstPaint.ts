@@ -1,3 +1,4 @@
+import { fetchFeatureFocus, type FeatureFocusPayload } from '../../api/featureFocus'
 import { fetchOverview, fetchTable } from '../../api/gold'
 import { GOLD_COLUMNS } from '../../api/goldColumns'
 import { GOLD_TABLES } from '../../api/goldTables'
@@ -17,6 +18,7 @@ const LANDING_SCOPES: Scope[] = ['br', 'pr', 'rmc']
 export type TerritorialFirstPaintRequest =
   | { kind: 'landing'; ano: number; mes: number }
   | { kind: 'detail'; scope: Scope; ano: number; mes: number }
+  | { kind: 'feature'; scope: Scope; featureId: string; ano: number; mes: number }
 
 export type LandingFirstPaint = {
   kind: 'landing'
@@ -35,7 +37,14 @@ export type DetailFirstPaint = {
   tableError: boolean
 }
 
-export type TerritorialFirstPaint = LandingFirstPaint | DetailFirstPaint
+export type FeatureFirstPaint = Omit<DetailFirstPaint, 'kind'> & {
+  kind: 'feature'
+  featureId: string
+  feature: FeatureFocusPayload | null
+  featureError: boolean
+}
+
+export type TerritorialFirstPaint = LandingFirstPaint | DetailFirstPaint | FeatureFirstPaint
 
 export type TerritorialFirstPaintPlan = {
   overviews: Scope[]
@@ -58,12 +67,14 @@ type FirstPaintDeps = {
     },
   ) => Promise<TableResponse>
   fetchGeo: (scope: Scope) => Promise<unknown>
+  fetchFeature?: (scope: Scope, featureId: string, ano: number, mes: number) => Promise<FeatureFocusPayload>
 }
 
 const defaultDeps: FirstPaintDeps = {
   fetchOverview: (scope, ano, mes) => fetchOverview(scope, ano, mes),
   fetchTable,
   fetchGeo: (scope) => fetchTerritorialRenderGeo(scope),
+  fetchFeature: (scope, featureId, ano, mes) => fetchFeatureFocus(scope, featureId, ano, mes),
 }
 
 const landingCache = new Map<string, LandingFirstPaint>()
@@ -189,6 +200,23 @@ export async function loadTerritorialFirstPaint(
   }
 
   void loadLandingFirstPaint(request.ano, request.mes, { deps })
-  const [detail] = await Promise.all([loadDetailFirstPaint(request, deps), geo])
-  return detail
+  const detailRequest = { kind: 'detail' as const, scope: request.scope, ano: request.ano, mes: request.mes }
+  const featureRequest =
+    request.kind === 'feature'
+      ? (deps.fetchFeature ?? defaultDeps.fetchFeature)?.(request.scope, request.featureId, request.ano, request.mes)
+          .then((feature) => ({ feature, featureError: false }))
+          .catch(() => ({ feature: null, featureError: true }))
+      : null
+  const [detail, featureResult] = await Promise.all([
+    loadDetailFirstPaint(detailRequest, deps),
+    geo.then(() => featureRequest),
+  ])
+  if (request.kind !== 'feature' || !featureResult) return detail
+  return {
+    ...detail,
+    kind: 'feature',
+    featureId: request.featureId,
+    feature: featureResult.feature,
+    featureError: featureResult.featureError,
+  }
 }

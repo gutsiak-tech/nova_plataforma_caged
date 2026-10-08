@@ -321,8 +321,24 @@
   color: #5d6678;
 }
 
+.territorial-feature-reveal {
+  opacity: 0;
+  transform: translate3d(-18px, 0, 0);
+  transition-property: opacity, transform;
+  transition-duration: 320ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.territorial-feature-reveal[data-state='open'] {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
 @media (max-height: 940px) {
-  .territorial-detail-sidebar {
+  .territorial-detail-scroll,
+  .territorial-feature-reveal {
     padding-top: 0.65rem;
     padding-bottom: 0.65rem;
   }
@@ -395,8 +411,30 @@
   z-index: 3;
 }
 
+/* Durante o foco, a interface fica acima do mapa ampliado.
+   O retângulo do mapa permanece transparente para o desenho continuar por baixo. */
+.territorial-experience-layer[data-layer='detail'][data-feature='open'] {
+  z-index: 4;
+  pointer-events: none;
+}
+
+.territorial-experience-layer[data-feature='open'] .territorial-detail-screen,
+.territorial-experience-layer[data-feature='open'] .territorial-detail-grid,
+.territorial-experience-layer[data-feature='open'] .territorial-map-slot,
+.territorial-experience-layer[data-feature='open'] .territorial-map-slot * {
+  pointer-events: none;
+  background-color: transparent;
+}
+
+.territorial-experience-layer[data-feature='open'] .territorial-detail-header,
+.territorial-experience-layer[data-feature='open'] .territorial-detail-sidebar {
+  pointer-events: auto;
+  background-color: #f7f5f0;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .territorial-experience-layer {
+  .territorial-experience-layer,
+  .territorial-feature-reveal {
     transition: none;
   }
 }

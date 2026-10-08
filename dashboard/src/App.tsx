@@ -55,6 +55,7 @@ export default function App() {
           >
             <Route index element={<></>} />
             <Route path=":territory" element={<></>} />
+            <Route path=":territory/:featureId" element={<></>} />
           </Route>
           <Route element={<AppShell />}>
             <Route

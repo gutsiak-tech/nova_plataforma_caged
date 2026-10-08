@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router-dom'
+import { Navigate, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useReducedMotion } from 'framer-motion'
 import type { Scope } from '../../api/types'
 import { useMonth } from '../../context/MonthContext'
@@ -7,11 +7,14 @@ import { TerritorialDetailPage } from '../../pages/TerritorialDetailPage'
 import { TerritorialLandingPage } from '../../pages/TerritorialLandingPage'
 import {
   resolveTerritorialPose,
+  territorialFeatureLocation,
   territorialLandingLocation,
   territorialMoveDuration,
+  type TerritorialPose,
 } from '../../lib/territorialPose'
 import {
   TerritorialMapStage,
+  type TerritorialFeatureMotion,
   type TerritorialMapModel,
   type TerritorialStageBox,
 } from './TerritorialMapStage'
@@ -38,6 +41,20 @@ function measureNode(node: HTMLElement | null, root: HTMLElement): TerritorialSt
   }
 }
 
+type FeatureVisual = {
+  scope: Scope
+  id: string
+  phase: 'approach' | 'hold' | 'panel-exit' | 'return'
+  instant: boolean
+}
+
+function stageFeature(visual: FeatureVisual | null, scope: Scope): TerritorialFeatureMotion | null {
+  if (!visual || visual.scope !== scope) return null
+  if (visual.phase === 'approach') return { id: visual.id, mode: 'approach', instant: false }
+  if (visual.phase === 'return') return { id: visual.id, mode: 'return', instant: false }
+  return { id: visual.id, mode: 'hold', instant: visual.instant && visual.phase === 'hold' }
+}
+
 function sameBox(a: TerritorialStageBox, b: TerritorialStageBox): boolean {
   return (
     Math.abs(a.left - b.left) < 0.5 &&
@@ -49,19 +66,36 @@ function sameBox(a: TerritorialStageBox, b: TerritorialStageBox): boolean {
 
 export function TerritorialExperience() {
   const { pathname } = useLocation()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { ano, mes } = useMonth()
   const reduced = useReducedMotion() === true
   const pose = resolveTerritorialPose(pathname)
-  const poseKey: 'landing' | 'detail' = pose.kind === 'detail' ? 'detail' : 'landing'
-  const detailScope = pose.kind === 'detail' ? pose.scope : null
+  const poseKey: 'landing' | 'detail' = pose.kind === 'landing' ? 'landing' : 'detail'
+  const detailScope = pose.kind === 'detail' || pose.kind === 'feature' ? pose.scope : null
+  const routeFeatureId = pose.kind === 'feature' ? pose.featureId : null
   const bootScope: Scope = detailScope ?? 'br'
-  const requestKey = pose.kind === 'invalid' ? null : `${pose.kind}:${bootScope}:${ano}:${mes}`
+  const requestKey =
+    pose.kind === 'invalid' ? null : `${pose.kind}:${bootScope}:${routeFeatureId ?? ''}:${ano}:${mes}`
   const [paint, setPaint] = useState<TerritorialFirstPaint | null>(null)
   const detailRetryRef = useRef<() => void>(() => {})
   const [picked, setPicked] = useState<Scope>(detailScope ?? 'br')
   const [mapModel, setMapModel] = useState<TerritorialMapModel | null>(null)
   const [frame, setFrame] = useState<StageFrame | null>(null)
+  const [featureVisual, setFeatureVisual] = useState<FeatureVisual | null>(() =>
+    pose.kind === 'feature'
+      ? { scope: pose.scope, id: pose.featureId, phase: 'hold', instant: true }
+      : null,
+  )
+  const poseToken =
+    pose.kind === 'feature'
+      ? `feature:${pose.scope}:${pose.featureId}`
+      : pose.kind === 'detail'
+        ? `detail:${pose.scope}`
+        : pose.kind
+  const poseTokenRef = useRef<string | null>(null)
+  const poseRef = useRef<TerritorialPose>(pose)
+  poseRef.current = pose
   const [slotsReady, setSlotsReady] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
   const landingNode = useRef<HTMLDivElement>(null)
@@ -76,23 +110,67 @@ export function TerritorialExperience() {
     if (!requestKey || paint || pose.kind === 'invalid') return
     let cancelled = false
     const request =
-      pose.kind === 'detail'
-        ? { kind: 'detail' as const, scope: bootScope, ano, mes }
-        : { kind: 'landing' as const, ano, mes }
+      pose.kind === 'feature'
+        ? { kind: 'feature' as const, scope: bootScope, featureId: routeFeatureId ?? '', ano, mes }
+        : pose.kind === 'detail'
+          ? { kind: 'detail' as const, scope: bootScope, ano, mes }
+          : { kind: 'landing' as const, ano, mes }
     loadTerritorialFirstPaint(request).then((result) => {
       if (!cancelled) setPaint((current) => current ?? result)
     })
     return () => {
       cancelled = true
     }
-  }, [requestKey, pose.kind, bootScope, ano, mes, paint])
+  }, [requestKey, pose.kind, routeFeatureId, bootScope, ano, mes, paint])
+
+  useLayoutEffect(() => {
+    const previous = poseTokenRef.current
+    if (previous === poseToken) return
+    poseTokenRef.current = poseToken
+    const current = poseRef.current
+
+    if (current.kind === 'feature') {
+      const fromMap =
+        previous === `detail:${current.scope}` ||
+        (previous?.startsWith(`feature:${current.scope}:`) ?? false)
+      const instant = reduced || !fromMap
+      const phase = instant ? 'hold' : 'approach'
+      setFeatureVisual((visual) => {
+        if (
+          visual &&
+          visual.scope === current.scope &&
+          visual.id === current.featureId &&
+          (visual.phase === 'hold' || visual.phase === 'approach')
+        ) {
+          return visual
+        }
+        return { scope: current.scope, id: current.featureId, phase, instant }
+      })
+      return
+    }
+
+    if (current.kind === 'detail') {
+      setFeatureVisual((visual) => {
+        if (!visual) return null
+        if (visual.scope !== current.scope) return null
+        if (visual.phase === 'approach' || reduced) return { ...visual, phase: 'return', instant: false }
+        if (visual.phase === 'hold' || visual.phase === 'panel-exit') {
+          return { ...visual, phase: 'panel-exit', instant: false }
+        }
+        return visual
+      })
+      return
+    }
+
+    setFeatureVisual(null)
+  }, [poseToken, reduced])
 
   const bindDetailRetry = useCallback((retry: () => void) => {
     detailRetryRef.current = retry
   }, [])
 
   const bootModel = useMemo<TerritorialMapModel | null>(() => {
-    if (!paint || paint.kind !== 'detail' || paint.scope !== scope) return null
+    if (!paint || paint.kind === 'landing' || paint.scope !== scope) return null
     return {
       scope: paint.scope,
       rows: paint.table?.rows ?? [],
@@ -195,6 +273,32 @@ export function TerritorialExperience() {
     }
   }, [readPair, poseKey, reduced, scope, slotsReady, paint])
 
+  const onSelectFeature = useCallback(
+    (featureId: string) => {
+      const current = poseRef.current
+      if (current.kind !== 'detail' && current.kind !== 'feature') return
+      if (current.kind === 'feature' && current.featureId === featureId) return
+      navigate(territorialFeatureLocation(current.scope, featureId, search))
+    },
+    [navigate, search],
+  )
+
+  const onFeatureArrived = useCallback(() => {
+    setFeatureVisual((current) =>
+      current && current.phase === 'approach' ? { ...current, phase: 'hold', instant: false } : current,
+    )
+  }, [])
+
+  const onFeaturePanelExited = useCallback(() => {
+    setFeatureVisual((current) =>
+      current && current.phase === 'panel-exit' ? { ...current, phase: 'return', instant: false } : current,
+    )
+  }, [])
+
+  const onFeatureReturned = useCallback(() => {
+    setFeatureVisual((current) => (current && current.phase === 'return' ? null : current))
+  }, [])
+
   function releaseMove() {
     setFrame((current) => {
       if (!current || current.duration === 0) return current
@@ -245,6 +349,7 @@ export function TerritorialExperience() {
       <div
         className="territorial-experience-layer"
         data-layer="detail"
+        data-feature={featureVisual ? 'open' : 'closed'}
         data-active={poseKey === 'detail' ? 'true' : 'false'}
         inert={poseKey !== 'detail'}
         aria-hidden={poseKey !== 'detail'}
@@ -255,8 +360,22 @@ export function TerritorialExperience() {
           active={poseKey === 'detail'}
           mapSlotRef={detailSlotRef}
           onMapModel={setMapModel}
-          initialPaint={paint.kind === 'detail' ? paint : null}
+          initialPaint={paint.kind === 'detail' || paint.kind === 'feature' ? paint : null}
           onBindRetry={bindDetailRetry}
+          feature={
+            featureVisual && featureVisual.scope === scope && featureVisual.phase !== 'return'
+              ? {
+                  id: featureVisual.id,
+                  revealed: featureVisual.phase === 'hold',
+                  leaving: featureVisual.phase === 'panel-exit',
+                  instant: featureVisual.instant && featureVisual.phase === 'hold',
+                  seed: paint.kind === 'feature' && paint.featureId === featureVisual.id ? paint.feature : null,
+                  seedError:
+                    paint.kind === 'feature' && paint.featureId === featureVisual.id ? paint.featureError : false,
+                }
+              : null
+          }
+          onFeaturePanelExited={onFeaturePanelExited}
         />
       </div>
       {frame ? (
@@ -270,6 +389,10 @@ export function TerritorialExperience() {
           reducedMotion={reduced}
           model={activeModel}
           onMoveComplete={releaseMove}
+          feature={stageFeature(featureVisual, scope)}
+          onSelectFeature={onSelectFeature}
+          onFeatureArrived={onFeatureArrived}
+          onFeatureReturned={onFeatureReturned}
         />
       ) : null}
       <Outlet />

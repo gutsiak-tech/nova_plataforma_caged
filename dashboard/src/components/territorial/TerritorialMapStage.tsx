@@ -9,6 +9,15 @@ import { buildMetricIndex, joinGeoJsonWithMetrics } from '../../lib/geoJoin'
 import { TERRITORIAL_MOVE_MS } from '../../lib/territorialPose'
 import { flightStableSize, flightTransform } from '../../lib/territorialFlight'
 import { CANONICAL_VIEW_BOX, canonicalTerritoryPaths } from '../../lib/territorialGeometry'
+import {
+  FEATURE_CONTEXT_OPACITY,
+  FEATURE_FOCUS_EASE,
+  FEATURE_FOCUS_MS,
+  FEATURE_TILT_DEGREES,
+  featureExternalId,
+  featureFocusTransform,
+  featureViewBounds,
+} from '../../lib/territorialFeatureFocus'
 import { TERRITORIAL_GEOGRAPHY } from '../../lib/territorialDetail'
 import { territoryOption } from '../../lib/territorialSummary'
 
@@ -50,6 +59,12 @@ type PathPaint = {
   hoverOpacity: number
 }
 
+export type TerritorialFeatureMotion = {
+  id: string
+  mode: 'approach' | 'hold' | 'return'
+  instant: boolean
+}
+
 export function TerritorialMapStage({
   scope,
   pose,
@@ -60,6 +75,10 @@ export function TerritorialMapStage({
   reducedMotion,
   model,
   onMoveComplete,
+  feature = null,
+  onSelectFeature,
+  onFeatureArrived,
+  onFeatureReturned,
 }: {
   scope: Scope
   pose: 'landing' | 'detail'
@@ -70,6 +89,10 @@ export function TerritorialMapStage({
   reducedMotion: boolean
   model: TerritorialMapModel | null
   onMoveComplete: () => void
+  feature?: TerritorialFeatureMotion | null
+  onSelectFeature?: (featureId: string) => void
+  onFeatureArrived?: () => void
+  onFeatureReturned?: () => void
 }) {
   const territory = territoryOption(scope)
   const { geoJson, geoLoading, geoError } = useTerritorialRenderGeo(scope)
@@ -115,7 +138,26 @@ export function TerritorialMapStage({
     })
   }, [join, paths])
 
-  const interactive = settledDetail && paths.length > 0
+  const featureId = feature?.id ?? null
+  const featureMode = feature?.mode ?? 'off'
+  const liftPaths = useMemo(() => {
+    if (featureMode !== 'hold' || !featureId) return []
+    return paths.filter((path) => featureExternalId(scope, path.properties) === featureId)
+  }, [featureMode, featureId, paths, scope])
+  const featureInstant = feature?.instant === true
+  const dimOthers = featureMode === 'approach' || featureMode === 'hold'
+  const opacityMotion = featureMode !== 'off'
+  const focusTransform = useMemo(() => {
+    if (!featureId) return null
+    const bounds = featureViewBounds(paths, scope, featureId)
+    if (!bounds) return null
+    return featureFocusTransform(bounds)
+  }, [featureId, paths, scope])
+  const liftBlur = focusTransform ? Math.max(0.35, 8 / focusTransform.scale) : 1
+  const liftDrop = focusTransform ? Math.max(0.2, 5 / focusTransform.scale) : 1
+  const allowHover = settledDetail && featureMode === 'off' && paths.length > 0
+  const clickable = allowHover || (settledDetail && featureMode === 'hold' && paths.length > 0)
+  const interactive = clickable
   const hoveredPath = activeHover != null ? paths[activeHover.index] : undefined
   const hoveredMetric = hoveredPath && join ? join.lookup(hoveredPath.properties) : undefined
   const tooltip = hoveredPath
@@ -136,6 +178,19 @@ export function TerritorialMapStage({
   const x = useMotionValue(0)
   const y = useMotionValue(0)
   const scale = useMotionValue(1)
+  const focusX = useMotionValue(0)
+  const focusY = useMotionValue(0)
+  const focusScale = useMotionValue(1)
+  const tilt = useMotionValue(0)
+  const focusGroupRef = useRef<SVGGElement>(null)
+  const onFeatureArrivedRef = useRef(onFeatureArrived)
+  const onFeatureReturnedRef = useRef(onFeatureReturned)
+  const onSelectRef = useRef(onSelectFeature)
+  useLayoutEffect(() => {
+    onFeatureArrivedRef.current = onFeatureArrived
+    onFeatureReturnedRef.current = onFeatureReturned
+    onSelectRef.current = onSelectFeature
+  })
 
   useLayoutEffect(() => {
     if (flying) return
@@ -187,9 +242,111 @@ export function TerritorialMapStage({
     scale,
   ])
 
+  useLayoutEffect(() => {
+    const node = focusGroupRef.current
+    if (!node) return
+    const apply = () => {
+      node.setAttribute(
+        'transform',
+        `translate(${focusX.get()} ${focusY.get()}) scale(${focusScale.get()})`,
+      )
+    }
+    apply()
+    const unsubscribe = [focusX, focusY, focusScale].map((value) => value.on('change', apply))
+    return () => {
+      for (const stop of unsubscribe) stop()
+    }
+  }, [focusScale, focusX, focusY, paths.length])
+
+  useLayoutEffect(() => {
+    if (!featureId || featureMode === 'off') {
+      focusX.set(0)
+      focusY.set(0)
+      focusScale.set(1)
+      tilt.set(0)
+      return
+    }
+    if (featureInstant) {
+      if (!focusTransform) return
+      focusX.set(focusTransform.x)
+      focusY.set(focusTransform.y)
+      focusScale.set(focusTransform.scale)
+      tilt.set(FEATURE_TILT_DEGREES)
+      return
+    }
+    if (featureMode === 'hold') {
+      if (!focusTransform) return
+      const drifted =
+        Math.abs(focusScale.get() - focusTransform.scale) > 0.02 ||
+        Math.abs(focusX.get() - focusTransform.x) > 1
+      if (!drifted) return
+      focusX.set(focusTransform.x)
+      focusY.set(focusTransform.y)
+      focusScale.set(focusTransform.scale)
+      tilt.set(FEATURE_TILT_DEGREES)
+      return
+    }
+    const durationSeconds = reducedMotion ? 0 : FEATURE_FOCUS_MS / 1000
+    const options = { duration: durationSeconds, ease: FEATURE_FOCUS_EASE }
+    let stopped = false
+    if (featureMode === 'approach') {
+      if (!focusTransform) {
+        if (paths.length > 0) onFeatureArrivedRef.current?.()
+        return
+      }
+      const ax = animate(focusX, focusTransform.x, options)
+      const ay = animate(focusY, focusTransform.y, options)
+      const at = animate(tilt, FEATURE_TILT_DEGREES, options)
+      const az = animate(focusScale, focusTransform.scale, {
+        ...options,
+        onComplete: () => {
+          if (!stopped) onFeatureArrivedRef.current?.()
+        },
+      })
+      return () => {
+        stopped = true
+        ax.stop()
+        ay.stop()
+        az.stop()
+        at.stop()
+      }
+    }
+    const ax = animate(focusX, 0, options)
+    const ay = animate(focusY, 0, options)
+    const at = animate(tilt, 0, options)
+    const az = animate(focusScale, 1, {
+      ...options,
+      onComplete: () => {
+        if (!stopped) onFeatureReturnedRef.current?.()
+      },
+    })
+    return () => {
+      stopped = true
+      ax.stop()
+      ay.stop()
+      az.stop()
+      at.stop()
+    }
+  }, [
+    featureId,
+    featureInstant,
+    featureMode,
+    focusScale,
+    focusTransform,
+    focusX,
+    focusY,
+    paths.length,
+    reducedMotion,
+    tilt,
+  ])
+
   return (
     <div
       className="territorial-map-stage territorial-detail-map"
+      data-feature-mode={featureMode}
+      data-feature-id={featureId ?? ''}
+      data-feature-scale={focusTransform ? focusTransform.scale.toFixed(4) : '1'}
+      data-feature-tilt={dimOthers ? String(FEATURE_TILT_DEGREES) : '0'}
       style={{ inset: 0, overflow: 'visible', pointerEvents: 'none' }}
     >
       <div
@@ -235,7 +392,18 @@ export function TerritorialMapStage({
             initial={pose === 'landing' && !reducedMotion ? { opacity: 0 } : false}
             animate={{ opacity: 1 }}
             transition={{ duration: pose === 'landing' && !reducedMotion ? 0.28 : 0, ease: 'easeOut' }}
+            style={{ transformStyle: 'preserve-3d' }}
           >
+            <motion.div
+              className="h-full w-full"
+              style={{
+                rotateX: tilt,
+                transformPerspective: 3200,
+                originX: 0.5,
+                originY: 0.5,
+                willChange: 'transform',
+              }}
+            >
             {paths.length === 0 ? (
               <div className="flex h-full items-center justify-center px-4 text-center">
                 {geoError && !geoLoading ? (
@@ -270,24 +438,55 @@ export function TerritorialMapStage({
                   stroke: '#1a2130',
                   strokeWidth,
                   strokeOpacity: settledDetail ? 0.38 : 1,
-                  cursor: settledDetail ? 'default' : 'auto',
+                  cursor: clickable ? 'pointer' : 'auto',
+                  overflow: 'visible',
                 }}
               >
-                <TerritoryShapes
-                  paths={paths}
-                  scope={scope}
-                  showMetrics={showMetrics}
-                  paints={showMetrics ? paints : null}
-                  hoverIndex={activeHover?.index ?? null}
-                  interactive={interactive}
-                  paintScale={paintScale}
-                  hoverKey={hoverKey}
-                  setHover={setHover}
-                />
+                <defs>
+                  <filter
+                    id="territorial-feature-lift"
+                    x="-35%"
+                    y="-35%"
+                    width="170%"
+                    height="170%"
+                    colorInterpolationFilters="sRGB"
+                  >
+                    <feGaussianBlur in="SourceAlpha" stdDeviation={liftBlur} result="blur" />
+                    <feOffset in="blur" dx="0" dy={liftDrop} result="offset" />
+                    <feFlood floodColor="#1a2130" floodOpacity="0.22" result="ink" />
+                    <feComposite in="ink" in2="offset" operator="in" result="shadow" />
+                  </filter>
+                </defs>
+                <g ref={focusGroupRef}>
+                  {liftPaths.length > 0 ? (
+                    <g pointerEvents="none" filter="url(#territorial-feature-lift)">
+                      {liftPaths.map((path, index) => (
+                        <path key={`lift-${path.territoryKey}-${index}`} d={path.d} fill="#1a2130" />
+                      ))}
+                    </g>
+                  ) : null}
+                  <TerritoryShapes
+                    paths={paths}
+                    scope={scope}
+                    showMetrics={showMetrics}
+                    paints={showMetrics ? paints : null}
+                    hoverIndex={allowHover ? (activeHover?.index ?? null) : null}
+                    interactive={allowHover}
+                    clickable={clickable}
+                    paintScale={paintScale}
+                    hoverKey={hoverKey}
+                    setHover={setHover}
+                    selectedId={dimOthers ? featureId : null}
+                    dimmed={dimOthers}
+                    opacityMotion={opacityMotion}
+                    onSelectRef={onSelectRef}
+                  />
+                </g>
               </svg>
             )}
+            </motion.div>
           </motion.div>
-          {tooltip && activeHover ? (
+          {tooltip && activeHover && allowHover ? (
             <div
               className="territory-map-tooltip pointer-events-none absolute z-20"
               style={{ left: activeHover.x, top: activeHover.y, transform: 'translate(-50%, calc(-100% - 12px))' }}
@@ -352,8 +551,8 @@ export function TerritorialMapStage({
           aria-hidden={!settledDetail}
           className="pointer-events-none absolute bottom-3 right-3 z-10 max-w-[calc(100%-1.5rem)]"
           style={{
-            opacity: settledDetail ? 1 : 0,
-            transition: settledDetail && !reducedMotion ? `opacity ${REVEAL_MS}ms ease-out` : 'none',
+            opacity: settledDetail && featureMode === 'off' ? 1 : 0,
+            transition: !reducedMotion ? `opacity ${REVEAL_MS}ms ease-out` : 'none',
           }}
         >
           <div className="rounded-md border border-[#ebe4d6] bg-[#fffdfb]/90 px-3 py-2 shadow-[0_8px_24px_rgba(26,33,48,0.05)]">
@@ -385,9 +584,14 @@ type TerritoryShapesProps = {
   paints: PathPaint[] | null
   hoverIndex: number | null
   interactive: boolean
+  clickable: boolean
   paintScale: number
   hoverKey: string
   setHover: Dispatch<SetStateAction<HoverState | null>>
+  selectedId: string | null
+  dimmed: boolean
+  opacityMotion: boolean
+  onSelectRef: { current: ((featureId: string) => void) | undefined }
 }
 
 function shapesStay(prev: TerritoryShapesProps, next: TerritoryShapesProps) {
@@ -398,7 +602,11 @@ function shapesStay(prev: TerritoryShapesProps, next: TerritoryShapesProps) {
     prev.paints === next.paints &&
     prev.hoverIndex === next.hoverIndex &&
     prev.interactive === next.interactive &&
-    prev.paintScale === next.paintScale
+    prev.clickable === next.clickable &&
+    prev.paintScale === next.paintScale &&
+    prev.selectedId === next.selectedId &&
+    prev.dimmed === next.dimmed &&
+    prev.opacityMotion === next.opacityMotion
   )
 }
 
@@ -409,19 +617,35 @@ const TerritoryShapes = memo(function TerritoryShapes({
   paints,
   hoverIndex,
   interactive,
+  clickable,
   paintScale,
   hoverKey,
   setHover,
+  selectedId,
+  dimmed,
+  opacityMotion,
+  onSelectRef,
 }: TerritoryShapesProps) {
   return paths.map((path, index) => {
     const hovered = hoverIndex === index
+    const externalId = featureExternalId(scope, path.properties)
+    const selected = selectedId != null && externalId === selectedId
     return (
       <path
         key={`${path.territoryKey}-${path.featureIndex}-${index}`}
         d={path.d}
+        data-feature-id={externalId ?? undefined}
         vectorEffect="non-scaling-stroke"
         strokeLinejoin="round"
-        style={pathPaint(scope, showMetrics, paints?.[index], hovered, paintScale)}
+        style={pathPaint(scope, showMetrics, paints?.[index], hovered, paintScale, selected, dimmed, opacityMotion)}
+        onClick={
+          clickable && externalId
+            ? (event) => {
+                event.stopPropagation()
+                onSelectRef.current?.(externalId)
+              }
+            : undefined
+        }
         onMouseEnter={
           interactive
             ? (event) => {
@@ -462,14 +686,22 @@ function pathPaint(
   paint: PathPaint | undefined,
   hovered: boolean,
   paintScale: number,
+  selected: boolean,
+  dimmed: boolean,
+  opacityMotion: boolean,
 ): CSSProperties {
   const style: CSSProperties = {
     fill: showMetrics && paint ? paint.fill : '#d3c9b6',
     fillOpacity: showMetrics && paint ? (hovered ? paint.hoverOpacity : paint.restOpacity) : 1,
   }
-  if (hovered) {
+  if (selected) style.fillOpacity = 1
+  else if (dimmed) style.fillOpacity = FEATURE_CONTEXT_OPACITY
+  if (opacityMotion) {
+    style.transition = `fill-opacity ${FEATURE_FOCUS_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
+  }
+  if (hovered || selected) {
     style.strokeOpacity = 1
-    style.strokeWidth = (DETAIL_STROKE[scope] + 1.15) / Math.max(paintScale, 0.001)
+    style.strokeWidth = (DETAIL_STROKE[scope] + (selected ? 0.65 : 1.15)) / Math.max(paintScale, 0.001)
   }
   return style
 }

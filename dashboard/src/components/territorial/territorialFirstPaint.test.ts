@@ -154,4 +154,52 @@ describe('territorial first paint', () => {
     await loadLandingFirstPaint(2024, 7, { deps })
     expect(overviewCalls).toBe(4)
   })
+
+  it('opens a direct feature only after the detail mesh and the feature payload', async () => {
+    const calls: string[] = []
+    const paint = await loadTerritorialFirstPaint(
+      { kind: 'feature', scope: 'br', featureId: 'SP', ano: 2026, mes: 2 },
+      {
+        fetchOverview: async (scope) => overview(scope, 2026, 2),
+        fetchTable: async (_baseName, scope) => table(scope, 2026, 2),
+        fetchGeo: async (scope) => {
+          calls.push(`geo:${scope}`)
+          return {}
+        },
+        fetchFeature: async (scope, featureId) => {
+          calls.push(`feature:${scope}:${featureId}`)
+          return {
+            identity: {
+              level: 'uf',
+              id: featureId,
+              name: 'São Paulo',
+              parent: { level: 'brasil', id: 'BR', name: 'Brasil' },
+              cod_uf: '35',
+              uf_sigla: 'SP',
+              uf: 'São Paulo',
+              uf_norm: 'SAO PAULO',
+              cod_municipio: null,
+              municipio: null,
+              municipio_norm: null,
+            },
+            period: { ano: 2026, mes: 2 },
+            kpis: { admissoes: 770074, desligamentos: 674178, saldo: 95896 },
+            salary: null,
+            sectors: { limit: 5, total: 0, by_saldo: [], by_admissoes: [], by_desligamentos: [] },
+            occupations: { limit: 5, total: 0, by_saldo: [], by_admissoes: [], by_desligamentos: [] },
+            profiles: { sexo: [], faixa_etaria: [], graudeinstrucao: [] },
+            timeseries: [],
+            comparison: { parents: [] },
+          }
+        },
+      },
+    )
+    expect(calls).toContain('geo:br')
+    expect(calls).toContain('feature:br:SP')
+    expect(paint.kind).toBe('feature')
+    if (paint.kind === 'feature') {
+      expect(paint.feature?.kpis.admissoes).toBe(770074)
+      expect(paint.featureError).toBe(false)
+    }
+  })
 })

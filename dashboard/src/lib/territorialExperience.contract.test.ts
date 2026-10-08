@@ -11,6 +11,7 @@ import documentSource from '../../index.html?raw'
 import {
   resolveTerritorialPose,
   territorialDetailLocation,
+  territorialFeatureLocation,
   territorialLandingLocation,
   territorialMoveDuration,
   TERRITORIAL_MOVE_MS,
@@ -41,6 +42,31 @@ describe('territorial pose', () => {
   it('rejects an unknown detail path', () => {
     expect(resolveTerritorialPose('/territorial/paraná')).toEqual({ kind: 'invalid' })
     expect(resolveTerritorialPose('/territorial/brasil/extra')).toEqual({ kind: 'invalid' })
+    expect(resolveTerritorialPose('/territorial/parana/sp')).toEqual({ kind: 'invalid' })
+    expect(resolveTerritorialPose('/territorial/brasil/sp/extra')).toEqual({ kind: 'invalid' })
+  })
+
+  it('resolves a feature focus route without replacing the detail route', () => {
+    expect(resolveTerritorialPose('/territorial/brasil/sp')).toEqual({
+      kind: 'feature',
+      scope: 'br',
+      featureId: 'SP',
+    })
+    expect(resolveTerritorialPose('/territorial/parana/4106902')).toEqual({
+      kind: 'feature',
+      scope: 'pr',
+      featureId: '4106902',
+    })
+    expect(resolveTerritorialPose('/territorial/rmc/4106902')).toEqual({
+      kind: 'feature',
+      scope: 'rmc',
+      featureId: '4106902',
+    })
+    expect(territorialFeatureLocation('br', 'SP', 'ano=2026&mes=2')).toEqual({
+      pathname: '/territorial/brasil/sp',
+      search: 'ano=2026&mes=2',
+    })
+    expect(territorialFeatureLocation('pr', '4106902').pathname).toBe('/territorial/parana/4106902')
   })
 
   it('builds one detail location and one return location, keeping the search', () => {
@@ -111,6 +137,7 @@ describe('territorial experience contract', () => {
     expect(files.app).not.toContain('TerritorialDetailPage')
     expect(files.app).toContain('path="territorial"')
     expect(files.app).toContain('path=":territory"')
+    expect(files.app).toContain('path=":territory/:featureId"')
   })
 
   it('does not add territorial bootstrap to the month context or the document', () => {
