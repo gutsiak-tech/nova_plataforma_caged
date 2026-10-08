@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.errors import GoldAPIError
+from app.api.routes_feature import router as feature_router
 from app.api.routes_map import router as map_router
 from app.api.routes_gold import router as gold_router
 from app.core.config import API_LOG_FILE, CORS_ORIGINS
@@ -27,6 +28,7 @@ app.add_middleware(
 
 app.include_router(map_router)
 app.include_router(gold_router)
+app.include_router(feature_router)
 
 
 @app.exception_handler(GoldAPIError)

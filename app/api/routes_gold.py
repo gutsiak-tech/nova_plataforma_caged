@@ -301,9 +301,14 @@ def table(
     _ensure_competencia(month)
 
     if is_br_only_table(base_name) and sc != "br":
+        message = (
+            f"{base_name} está disponível apenas para scope=br (resumo nacional)."
+            if base_name == "tabela_resumo"
+            else f"{base_name} está disponível apenas para scope=br."
+        )
         raise GoldAPIError(
             "INVALID_SCOPE",
-            f"{base_name} está disponível apenas para scope=br (resumo nacional).",
+            message,
             {"table": base_name, "scope": sc, "allowed_scopes": ["br"]},
             status_code=400,
         )

@@ -18,6 +18,7 @@ from app.core.config import (
 )
 from app.core.logging import setup_logger
 from app.services.gold_catalog_service import CURRENT_PIPELINE_TABLES
+from pipelines.gold.feature_contract import FEATURE_GOLD_TABLE_NAMES
 from pipelines.gold.publication import (
     canonical_gold_competencia_dir,
     is_valid_gold_competencia_dir,
@@ -30,7 +31,7 @@ logger = setup_logger("api.gold", API_LOG_FILE)
 Scope = Literal["br", "pr", "rmc"]
 
 # Tabelas geradas apenas no recorte Brasil (sem sufixo _pr/_rmc).
-BR_ONLY_TABLES = frozenset({"tabela_resumo"})
+BR_ONLY_TABLES = frozenset({"tabela_resumo", *FEATURE_GOLD_TABLE_NAMES})
 
 
 def _logical_table_name(table_name: str) -> str:

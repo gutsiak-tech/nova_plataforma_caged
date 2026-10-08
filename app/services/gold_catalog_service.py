@@ -11,6 +11,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from app.core.config import GOLD_CAGED_DIR, PROJECT_ROOT
+from pipelines.gold.feature_contract import FEATURE_GOLD_TABLE_NAMES
 from pipelines.gold.publication import is_valid_gold_competencia_dir
 
 CATALOG_DIR = PROJECT_ROOT / "data-lake" / "catalog"
@@ -78,6 +79,7 @@ CURRENT_PIPELINE_TABLES = frozenset(
         "tabela_perfil_faixa_etaria_instrucao_salario",
         "tabela_perfil_faixa_etaria_instrucao_salario_pr",
         "tabela_perfil_faixa_etaria_instrucao_salario_rmc",
+        *FEATURE_GOLD_TABLE_NAMES,
     }
 )
 
@@ -151,6 +153,23 @@ def _strip_scope_suffix(table_name: str) -> str:
     return table_name
 
 
+def _feature_table_granularity(base: str) -> str | None:
+    if base.startswith("tabela_uf_"):
+        suffix = base[len("tabela_uf_") :]
+    elif base.startswith("tabela_municipio_"):
+        suffix = base[len("tabela_municipio_") :]
+    else:
+        return None
+    return {
+        "salario": "salario",
+        "setor": "setor",
+        "ocupacao": "ocupacao",
+        "perfil_sexo": "perfil_sexo",
+        "perfil_faixa_etaria": "perfil_faixa_etaria",
+        "perfil_graudeinstrucao": "perfil_instrucao",
+    }.get(suffix)
+
+
 def infer_granularity_from_table_name(table_name: str) -> str:
     base = _strip_scope_suffix(table_name)
 
@@ -164,6 +183,10 @@ def infer_granularity_from_table_name(table_name: str) -> str:
         return "setor"
     if base == "tabela_ocupacao":
         return "ocupacao"
+
+    feature_granularity = _feature_table_granularity(base)
+    if feature_granularity is not None:
+        return feature_granularity
 
     lowered = base.lower()
     if "salario" in lowered:

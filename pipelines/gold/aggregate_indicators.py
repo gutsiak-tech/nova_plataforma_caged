@@ -99,11 +99,53 @@ def normalizar_texto_upper_sem_acento(txt):
     return txt
 
 
+def apply_unique_mapping(series: pd.Series, func) -> pd.Series:
+    """Aplica `func` uma vez por valor distinto. O resultado é o mesmo de `Series.map`."""
+    as_string = series.astype("string")
+    result = pd.Series(pd.NA, index=series.index, dtype="string")
+    mask = as_string.notna()
+    if not mask.any():
+        return result
+    source = as_string.loc[mask]
+    lookup = {value: func(value) for value in pd.unique(source)}
+    result.loc[mask] = source.map(lookup).astype("string")
+    return result
+
+
 def preparar_texto(df: pd.DataFrame, colunas: list[str]) -> pd.DataFrame:
     for col in colunas:
         if col in df.columns:
-            df[col] = df[col].astype("string").map(normalizar_texto)
+            df[col] = apply_unique_mapping(df[col], normalizar_texto)
     return df
+
+
+def prepare_territorial_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Padroniza textos e chaves normalizadas usadas pelos joins territoriais."""
+    colunas_textuais = [
+        "uf",
+        "municipio",
+        "secao",
+        "cbo2002ocupacao",
+        "sexo",
+        "faixa_etaria",
+        "graudeinstrucao",
+    ]
+    prepared = preparar_texto(df, colunas_textuais)
+    if "uf" in prepared.columns:
+        prepared["uf_norm"] = apply_unique_mapping(
+            prepared["uf"],
+            normalizar_texto_upper_sem_acento,
+        )
+    else:
+        prepared["uf_norm"] = pd.Series(pd.NA, index=prepared.index, dtype="string")
+    if "municipio" in prepared.columns:
+        prepared["municipio_norm"] = apply_unique_mapping(
+            prepared["municipio"],
+            normalizar_texto_upper_sem_acento,
+        )
+    else:
+        prepared["municipio_norm"] = pd.Series(pd.NA, index=prepared.index, dtype="string")
+    return prepared
 
 
 def salvar_tabela(df: pd.DataFrame, output_dir: Path, nome_arquivo: str) -> None:
@@ -322,26 +364,7 @@ def run_aggregate_indicators(ano: int, mes: int) -> None:
     # -----------------------------------------------------
     # Padronização leve
     # -----------------------------------------------------
-    colunas_textuais = [
-        "uf",
-        "municipio",
-        "secao",
-        "cbo2002ocupacao",
-        "sexo",
-        "faixa_etaria",
-        "graudeinstrucao",
-    ]
-    df = preparar_texto(df, colunas_textuais)
-
-    if "uf" in df.columns:
-        df["uf_norm"] = df["uf"].map(normalizar_texto_upper_sem_acento)
-    else:
-        df["uf_norm"] = pd.NA
-
-    if "municipio" in df.columns:
-        df["municipio_norm"] = df["municipio"].map(normalizar_texto_upper_sem_acento)
-    else:
-        df["municipio_norm"] = pd.NA
+    df = prepare_territorial_frame(df)
 
     # -----------------------------------------------------
     # Recortes
@@ -615,6 +638,9 @@ def run_aggregate_indicators(ano: int, mes: int) -> None:
         silver_input,
     )
 
+    from pipelines.gold.aggregate_feature_indicators import materialize_feature_gold
+
+    materialize_feature_gold(df, ano, output_dir)
     logger.info(
         f"[GOLD] Concluído | output={output_dir} | validation={gold_output.validation_status}"
     )
