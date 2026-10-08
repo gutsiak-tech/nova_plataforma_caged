@@ -1,0 +1,33 @@
+{
+  "source": "dashboard/public/geo/ufs.geojson",
+  "method": "topological-douglas-peucker",
+  "referenceStagePx": 831,
+  "referenceTolerancePx": 0.2,
+  "viewBoxSize": 1000,
+  "viewBoxTolerance": 0.24067388688327318,
+  "sharedSnapViewBox": 0.02,
+  "snappedVertexPairs": 362,
+  "projection": {
+    "minLon": -74,
+    "maxLon": -34.5,
+    "minLat": -34,
+    "maxLat": 5.5,
+    "padding": 36,
+    "scale": 23.49367088607595
+  },
+  "features": 27,
+  "arcs": 2386,
+  "verticesBefore": 160645,
+  "verticesAfter": 22422,
+  "keptOriginalRings": 236,
+  "localSpurs": 0,
+  "restoredVertices": 3337,
+  "repairPasses": 40,
+  "neighborPairs": 49,
+  "maxDeviationViewBox": 0.26783471082452315,
+  "maxDeviationPx": {
+    "831": 0.22257064469517873,
+    "1080": 0.289261487690485,
+    "1440": 0.3856819835873133
+  }
+}

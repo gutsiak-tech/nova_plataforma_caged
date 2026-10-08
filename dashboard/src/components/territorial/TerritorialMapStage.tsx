@@ -4,12 +4,8 @@ import type { GoldRow, Scope } from '../../api/types'
 import { describeTerritoryTooltip } from '../map/mapTooltip'
 import { MapLegend } from '../map/MapLegend'
 import { saldoFillColor } from '../map/mapChoropleth'
-import { useTerritoryGeoJson } from '../map/useTerritoryGeoJson'
-import {
-  buildMetricIndex,
-  joinGeoJsonWithMetrics,
-  type TerritoryMetricRow,
-} from '../../lib/geoJoin'
+import { useTerritorialRenderGeo } from '../map/territorialRenderGeo'
+import { buildMetricIndex, joinGeoJsonWithMetrics } from '../../lib/geoJoin'
 import { TERRITORIAL_MOVE_MS } from '../../lib/territorialPose'
 import { flightStableSize, flightTransform } from '../../lib/territorialFlight'
 import { CANONICAL_VIEW_BOX, canonicalTerritoryPaths } from '../../lib/territorialGeometry'
@@ -48,10 +44,10 @@ const MOVE_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 const MOVE_EASE_BEZIER = [0.22, 1, 0.36, 1] as const
 const REVEAL_MS = 180
 
-function paintTransition(reducedMotion: boolean, hovered: boolean, reveal: boolean): string {
-  if (reducedMotion || hovered || !reveal) return 'none'
-  const ms = `${REVEAL_MS}ms ease-out`
-  return `fill ${ms}, fill-opacity ${ms}, stroke-opacity ${ms}, stroke-width ${ms}`
+type PathPaint = {
+  fill: string
+  restOpacity: number
+  hoverOpacity: number
 }
 
 export function TerritorialMapStage({
@@ -76,7 +72,7 @@ export function TerritorialMapStage({
   onMoveComplete: () => void
 }) {
   const territory = territoryOption(scope)
-  const { geoJson, geoLoading, geoError } = useTerritoryGeoJson(scope)
+  const { geoJson, geoLoading, geoError } = useTerritorialRenderGeo(scope)
   const [hover, setHover] = useState<{
     index: number
     x: number
@@ -100,12 +96,24 @@ export function TerritorialMapStage({
     [geoJson, scope],
   )
   const join = useMemo(() => {
-    if (!geoJson || !showMetrics || !model) return null
+    if (!geoJson || !metricsReady || !model) return null
     return joinGeoJsonWithMetrics(geoJson, {
       joinProperty: geography.joinProperty,
       metricIndex: buildMetricIndex(model.rows, geography.labelKey),
     })
-  }, [geoJson, geography.joinProperty, geography.labelKey, model, showMetrics])
+  }, [geoJson, geography.joinProperty, geography.labelKey, model, metricsReady])
+  const paints = useMemo(() => {
+    if (!join) return null
+    return paths.map((path) => {
+      const metric = join.lookup(path.properties)
+      const hasMetric = Boolean(metric)
+      return {
+        fill: saldoFillColor(metric?.saldo, join.maxAbsSaldo),
+        restOpacity: hasMetric ? 0.84 : 0.42,
+        hoverOpacity: hasMetric ? 0.96 : 0.58,
+      }
+    })
+  }, [join, paths])
 
   const interactive = settledDetail && paths.length > 0
   const hoveredPath = activeHover != null ? paths[activeHover.index] : undefined
@@ -121,6 +129,8 @@ export function TerritorialMapStage({
   const targetTf = flightTransform(targetBox, stable)
   const restTf = flightTransform(box, stable)
   const paintScale = flying ? sourceTf.scale : restTf.scale
+  const screenStroke = settledDetail ? DETAIL_STROKE[scope] : LANDING_STROKE[scope]
+  const strokeWidth = screenStroke / Math.max(paintScale, 0.001)
   const holder = { left: 0, top: 0, width: stable, height: stable }
 
   const x = useMotionValue(0)
@@ -191,7 +201,7 @@ export function TerritorialMapStage({
           width: box.width,
           height: box.height,
           backgroundColor: pose === 'detail' ? '#f3efe6' : 'rgba(243, 239, 230, 0)',
-          transition: flying ? `background-color ${TERRITORIAL_MOVE_MS}ms ${MOVE_EASE}` : 'none',
+          transition: flying && pose === 'detail' ? `background-color ${TERRITORIAL_MOVE_MS}ms ${MOVE_EASE}` : 'none',
           pointerEvents: 'none',
         }}
       />
@@ -256,15 +266,19 @@ export function TerritorialMapStage({
                     ? `Mapa de ${territory.name} por saldo`
                     : `Mapa de ${territory.name}`
                 }
+                style={{
+                  stroke: '#1a2130',
+                  strokeWidth,
+                  strokeOpacity: settledDetail ? 0.38 : 1,
+                  cursor: settledDetail ? 'default' : 'auto',
+                }}
               >
                 <TerritoryShapes
                   paths={paths}
                   scope={scope}
-                  settledDetail={settledDetail}
                   showMetrics={showMetrics}
-                  join={join}
+                  paints={showMetrics ? paints : null}
                   hoverIndex={activeHover?.index ?? null}
-                  reducedMotion={reducedMotion}
                   interactive={interactive}
                   paintScale={paintScale}
                   hoverKey={hoverKey}
@@ -367,11 +381,9 @@ type HoverState = {
 type TerritoryShapesProps = {
   paths: ReturnType<typeof canonicalTerritoryPaths>
   scope: Scope
-  settledDetail: boolean
   showMetrics: boolean
-  join: ReturnType<typeof joinGeoJsonWithMetrics> | null
+  paints: PathPaint[] | null
   hoverIndex: number | null
-  reducedMotion: boolean
   interactive: boolean
   paintScale: number
   hoverKey: string
@@ -382,11 +394,9 @@ function shapesStay(prev: TerritoryShapesProps, next: TerritoryShapesProps) {
   return (
     prev.paths === next.paths &&
     prev.scope === next.scope &&
-    prev.settledDetail === next.settledDetail &&
     prev.showMetrics === next.showMetrics &&
-    prev.join === next.join &&
+    prev.paints === next.paints &&
     prev.hoverIndex === next.hoverIndex &&
-    prev.reducedMotion === next.reducedMotion &&
     prev.interactive === next.interactive &&
     prev.paintScale === next.paintScale
   )
@@ -395,18 +405,15 @@ function shapesStay(prev: TerritoryShapesProps, next: TerritoryShapesProps) {
 const TerritoryShapes = memo(function TerritoryShapes({
   paths,
   scope,
-  settledDetail,
   showMetrics,
-  join,
+  paints,
   hoverIndex,
-  reducedMotion,
   interactive,
   paintScale,
   hoverKey,
   setHover,
 }: TerritoryShapesProps) {
   return paths.map((path, index) => {
-    const metric = join?.lookup(path.properties)
     const hovered = hoverIndex === index
     return (
       <path
@@ -414,17 +421,7 @@ const TerritoryShapes = memo(function TerritoryShapes({
         d={path.d}
         vectorEffect="non-scaling-stroke"
         strokeLinejoin="round"
-        style={pathPaint(
-          scope,
-          settledDetail,
-          showMetrics,
-          Boolean(metric),
-          hovered,
-          metric,
-          join?.maxAbsSaldo ?? 0,
-          reducedMotion,
-          paintScale,
-        )}
+        style={pathPaint(scope, showMetrics, paints?.[index], hovered, paintScale)}
         onMouseEnter={
           interactive
             ? (event) => {
@@ -461,27 +458,18 @@ const TerritoryShapes = memo(function TerritoryShapes({
 
 function pathPaint(
   scope: Scope,
-  settledDetail: boolean,
   showMetrics: boolean,
-  hasMetric: boolean,
+  paint: PathPaint | undefined,
   hovered: boolean,
-  metric: TerritoryMetricRow | undefined,
-  maxAbsSaldo: number,
-  reducedMotion: boolean,
   paintScale: number,
 ): CSSProperties {
-  const screenStroke = hovered
-    ? DETAIL_STROKE[scope] + 1.15
-    : settledDetail
-      ? DETAIL_STROKE[scope]
-      : LANDING_STROKE[scope]
-  return {
-    fill: showMetrics ? saldoFillColor(metric?.saldo, maxAbsSaldo) : '#d3c9b6',
-    fillOpacity: showMetrics ? (hovered ? (hasMetric ? 0.96 : 0.58) : hasMetric ? 0.84 : 0.42) : 1,
-    stroke: '#1a2130',
-    strokeOpacity: hovered ? 1 : settledDetail ? 0.38 : 1,
-    strokeWidth: screenStroke / Math.max(paintScale, 0.001),
-    cursor: settledDetail ? 'default' : 'auto',
-    transition: paintTransition(reducedMotion, hovered, settledDetail),
+  const style: CSSProperties = {
+    fill: showMetrics && paint ? paint.fill : '#d3c9b6',
+    fillOpacity: showMetrics && paint ? (hovered ? paint.hoverOpacity : paint.restOpacity) : 1,
   }
+  if (hovered) {
+    style.strokeOpacity = 1
+    style.strokeWidth = (DETAIL_STROKE[scope] + 1.15) / Math.max(paintScale, 0.001)
+  }
+  return style
 }

@@ -12,6 +12,8 @@ O dashboard usa **GeoJSON estático** servido por `dashboard/public/geo/` antes 
 | Paraná (`pr`) | `municipios_pr.geojson` | `tabela_municipio_pr` |
 | RMC (`rmc`) | `municipios_rmc.geojson` | `tabela_municipio_rmc` |
 
+A fonte do Brasil continua `ufs.geojson`. A experiência territorial (entrada e detalhe) renderiza `ufs.presentation.geojson`, gerada uma vez por `node pipelines/geo/prepare_ufs_presentation.mjs`. O fundo e a página Território seguem na fonte original. Paraná e RMC não são simplificados.
+
 ## Shapefiles necessários
 
 1. UFs/estados do Brasil

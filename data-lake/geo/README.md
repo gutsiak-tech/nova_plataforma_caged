@@ -59,6 +59,18 @@ Ajuda:
 python -m pipelines.geo.prepare_geo_assets --help
 ```
 
+## Malha de apresentação do Brasil
+
+`dashboard/public/geo/ufs.geojson` permanece a fonte geográfica. O mapa territorial do Brasil renderiza uma malha derivada, `dashboard/public/geo/ufs.presentation.geojson`, para caber no orçamento de frame. Paraná e RMC não passam por essa simplificação.
+
+A geração é topológica: cada fronteira compartilhada é simplificada uma vez, com tolerância de 0,20 px num stage de 831 px (viewBox 1000×1000). Não faz parte da inicialização do frontend. Na raiz do repositório:
+
+```bash
+node pipelines/geo/prepare_ufs_presentation.mjs
+```
+
+O script recusa sobrescrever `ufs.geojson` e grava também `ufs.presentation.metadata.json`.
+
 ## Saídas geradas
 
 | Arquivo | Uso futuro no dashboard |
