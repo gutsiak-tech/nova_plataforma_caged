@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import { motion } from 'framer-motion'
 import type { OverviewResponse, Scope } from '../api/types'
@@ -91,27 +91,25 @@ export function TerritorialLandingPage({
     <div className="min-h-screen bg-[#f7f5f0] text-[#1a2130] lg:h-dvh">
       <div className="grid min-h-screen px-5 py-5 sm:px-8 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(20rem,24%)_minmax(0,1fr)] lg:gap-x-12 lg:px-10 lg:py-[clamp(0.75rem,1.5vh,1.15rem)] xl:gap-x-16">
         <section className="flex flex-col py-2 lg:h-full lg:min-h-0 lg:py-1">
-          <header className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
+          <header className="flex items-center">
+            <div className="flex min-w-0 items-center gap-3">
               <img
                 src="/estudio_logo.png"
                 alt=""
-                className="h-11 w-11 rounded-xl"
+                className="h-11 w-11 shrink-0 rounded-xl"
                 aria-hidden
               />
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#727d91]">
-                  CAGED
+              <div className="flex min-w-0 items-center gap-x-2.5">
+                <p className="text-sm font-semibold leading-[1.15] tracking-[-0.02em] text-[#1a2130]">
+                  Plataforma
+                  <br />
+                  Becker
                 </p>
-                <p className="text-sm font-semibold">Plataforma analítica</p>
+                <p className="whitespace-nowrap text-[13px] font-medium leading-none text-[#5d6678]">
+                  powered by vonturing.tech
+                </p>
               </div>
             </div>
-            <Link
-              to={{ pathname: '/', search: searchParams.toString() }}
-              className="text-sm font-medium text-[#5d6678] underline-offset-4 hover:text-[#1a2130] hover:underline"
-            >
-              Painel analítico
-            </Link>
           </header>
 
           <div className="flex flex-1 flex-col justify-center py-10 lg:justify-start lg:py-0 lg:pt-[clamp(1.25rem,5vh,3rem)]">

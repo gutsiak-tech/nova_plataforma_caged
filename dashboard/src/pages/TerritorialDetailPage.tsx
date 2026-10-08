@@ -138,12 +138,16 @@ export function TerritorialDetailPage({
     <div className="flex min-h-dvh flex-col bg-[#f7f5f0] text-[#1a2130] lg:h-dvh lg:overflow-hidden">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[#e4dfd4] px-4 py-2.5 sm:px-5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <img src="/estudio_logo.png" alt="" className="h-8 w-8 rounded-lg" aria-hidden />
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#727d91]">
-              CAGED
+          <img src="/estudio_logo.png" alt="" className="h-8 w-8 shrink-0 rounded-lg" aria-hidden />
+          <div className="flex min-w-0 items-center gap-x-2.5">
+            <p className="text-sm font-semibold leading-[1.15] tracking-[-0.02em] text-[#1a2130]">
+              Plataforma
+              <br />
+              Becker
             </p>
-            <p className="truncate text-sm font-semibold leading-4">Plataforma analítica</p>
+            <p className="whitespace-nowrap text-[13px] font-medium leading-none text-[#5d6678]">
+              powered by vonturing.tech
+            </p>
           </div>
         </div>
 
