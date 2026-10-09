@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useReducedMotion } from 'framer-motion'
+import { fetchFeatureFocus, peekFeatureFocus, type FeatureFocusPayload } from '../../api/featureFocus'
 import type { Scope } from '../../api/types'
 import { useMonth } from '../../context/MonthContext'
 import { TerritorialDetailPage } from '../../pages/TerritorialDetailPage'
@@ -18,8 +19,18 @@ import {
   type TerritorialMapModel,
   type TerritorialStageBox,
 } from './TerritorialMapStage'
+import { TerritorialChrome } from './TerritorialChrome'
 import { TerritorialRouteLoading } from './TerritorialRouteLoading'
 import { loadTerritorialFirstPaint, type TerritorialFirstPaint } from './territorialFirstPaint'
+import {
+  featureChromeOnPose,
+  featurePanelPending,
+  featurePanelRevealed,
+  initialFeatureChrome,
+  promoteFeaturePanel,
+  type FeatureChromeState,
+  type FeaturePanelResolution,
+} from '../../lib/territorialFeatureChrome'
 
 type StageFrame = TerritorialStageBox & {
   poseKey: 'landing' | 'detail'
@@ -41,14 +52,13 @@ function measureNode(node: HTMLElement | null, root: HTMLElement): TerritorialSt
   }
 }
 
-type FeatureVisual = {
-  scope: Scope
-  id: string
-  phase: 'approach' | 'hold' | 'panel-exit' | 'return'
-  instant: boolean
+type FeaturePanelResult = FeaturePanelResolution & {
+  ano: number
+  mes: number
+  data: FeatureFocusPayload | null
 }
 
-function stageFeature(visual: FeatureVisual | null, scope: Scope): TerritorialFeatureMotion | null {
+function stageFeature(visual: FeatureChromeState | null, scope: Scope): TerritorialFeatureMotion | null {
   if (!visual || visual.scope !== scope) return null
   if (visual.phase === 'approach') return { id: visual.id, mode: 'approach', instant: false }
   if (visual.phase === 'return') return { id: visual.id, mode: 'return', instant: false }
@@ -82,11 +92,12 @@ export function TerritorialExperience() {
   const [picked, setPicked] = useState<Scope>(detailScope ?? 'br')
   const [mapModel, setMapModel] = useState<TerritorialMapModel | null>(null)
   const [frame, setFrame] = useState<StageFrame | null>(null)
-  const [featureVisual, setFeatureVisual] = useState<FeatureVisual | null>(() =>
-    pose.kind === 'feature'
-      ? { scope: pose.scope, id: pose.featureId, phase: 'hold', instant: true }
-      : null,
+  const [featureVisual, setFeatureVisual] = useState<FeatureChromeState | null>(() =>
+    pose.kind === 'feature' ? initialFeatureChrome(pose.scope, pose.featureId) : null,
   )
+  const [panelResult, setPanelResult] = useState<FeaturePanelResult | null>(null)
+  const panelResultRef = useRef<FeaturePanelResolution | null>(null)
+  const panelRequest = useRef(0)
   const poseToken =
     pose.kind === 'feature'
       ? `feature:${pose.scope}:${pose.featureId}`
@@ -124,46 +135,50 @@ export function TerritorialExperience() {
   }, [requestKey, pose.kind, routeFeatureId, bootScope, ano, mes, paint])
 
   useLayoutEffect(() => {
+    if (pose.kind !== 'feature' || !routeFeatureId) return
+    const cached = peekFeatureFocus(scope, routeFeatureId, ano, mes)
+    if (!cached) return
+    const next = { scope, id: routeFeatureId, ano, mes, status: 'ready' as const, data: cached }
+    panelResultRef.current = next
+    setPanelResult(next)
+  }, [pose.kind, routeFeatureId, scope, ano, mes])
+
+  useLayoutEffect(() => {
     const previous = poseTokenRef.current
     if (previous === poseToken) return
     poseTokenRef.current = poseToken
     const current = poseRef.current
-
-    if (current.kind === 'feature') {
-      const fromMap =
-        previous === `detail:${current.scope}` ||
-        (previous?.startsWith(`feature:${current.scope}:`) ?? false)
-      const instant = reduced || !fromMap
-      const phase = instant ? 'hold' : 'approach'
-      setFeatureVisual((visual) => {
-        if (
-          visual &&
-          visual.scope === current.scope &&
-          visual.id === current.featureId &&
-          (visual.phase === 'hold' || visual.phase === 'approach')
-        ) {
-          return visual
-        }
-        return { scope: current.scope, id: current.featureId, phase, instant }
-      })
-      return
-    }
-
-    if (current.kind === 'detail') {
-      setFeatureVisual((visual) => {
-        if (!visual) return null
-        if (visual.scope !== current.scope) return null
-        if (visual.phase === 'approach' || reduced) return { ...visual, phase: 'return', instant: false }
-        if (visual.phase === 'hold' || visual.phase === 'panel-exit') {
-          return { ...visual, phase: 'panel-exit', instant: false }
-        }
-        return visual
-      })
-      return
-    }
-
-    setFeatureVisual(null)
+    setFeatureVisual((visual) => {
+      const committed = visual ? promoteFeaturePanel(visual, panelResultRef.current) : visual
+      const next = featureChromeOnPose(committed, previous, current, reduced)
+      return next ? promoteFeaturePanel(next, panelResultRef.current) : next
+    })
   }, [poseToken, reduced])
+
+  useEffect(() => {
+    if (pose.kind !== 'feature' || !routeFeatureId) return
+    const targetId = routeFeatureId
+    const targetScope = scope
+    if (peekFeatureFocus(targetScope, targetId, ano, mes)) return
+    const serial = ++panelRequest.current
+    let cancelled = false
+    const apply = (status: 'ready' | 'error', data: FeatureFocusPayload | null) => {
+      if (cancelled || serial !== panelRequest.current) return
+      const next = { scope: targetScope, id: targetId, ano, mes, status, data }
+      panelResultRef.current = next
+      setPanelResult(next)
+      setFeatureVisual((current) => (current ? promoteFeaturePanel(current, next) : current))
+    }
+    fetchFeatureFocus(targetScope, targetId, ano, mes)
+      .then((data) => {
+        if (data.identity.id !== targetId) return
+        apply('ready', data)
+      })
+      .catch(() => apply('error', null))
+    return () => {
+      cancelled = true
+    }
+  }, [pose.kind, routeFeatureId, scope, ano, mes])
 
   const bindDetailRetry = useCallback((retry: () => void) => {
     detailRetryRef.current = retry
@@ -284,9 +299,10 @@ export function TerritorialExperience() {
   )
 
   const onFeatureArrived = useCallback(() => {
-    setFeatureVisual((current) =>
-      current && current.phase === 'approach' ? { ...current, phase: 'hold', instant: false } : current,
-    )
+    setFeatureVisual((current) => {
+      if (!current || current.phase !== 'approach') return current
+      return promoteFeaturePanel({ ...current, phase: 'hold', instant: false }, panelResultRef.current)
+    })
   }, [])
 
   const onFeaturePanelExited = useCallback(() => {
@@ -324,8 +340,18 @@ export function TerritorialExperience() {
   const posePending = frame != null && frame.poseKey !== poseKey
   const stageDuration = frame == null ? 0 : posePending ? moveMs : frame.duration
 
+  const featureBack = Boolean(
+    featureVisual && featureVisual.scope === scope && featureVisual.phase !== 'return',
+  )
+
   return (
     <div ref={rootRef} className="territorial-experience">
+      <TerritorialChrome
+        pose={poseKey}
+        scope={scope}
+        featureBack={featureBack}
+        featureLeaving={featureVisual?.phase === 'panel-exit'}
+      />
       <div
         className="territorial-experience-layer"
         data-layer="landing"
@@ -365,13 +391,32 @@ export function TerritorialExperience() {
           feature={
             featureVisual && featureVisual.scope === scope && featureVisual.phase !== 'return'
               ? {
-                  id: featureVisual.id,
-                  revealed: featureVisual.phase === 'hold',
+                  id: featureVisual.panelId,
+                  revealed: featurePanelRevealed(featureVisual),
                   leaving: featureVisual.phase === 'panel-exit',
-                  instant: featureVisual.instant && featureVisual.phase === 'hold',
-                  seed: paint.kind === 'feature' && paint.featureId === featureVisual.id ? paint.feature : null,
+                  instant: featureVisual.instant && featureVisual.phase === 'hold' && featureVisual.panelId === featureVisual.id,
+                  seed:
+                    panelResult?.status === 'ready' &&
+                    panelResult.scope === featureVisual.scope &&
+                    panelResult.id === featureVisual.panelId &&
+                    panelResult.ano === ano &&
+                    panelResult.mes === mes
+                      ? panelResult.data
+                      : paint.kind === 'feature' && paint.featureId === featureVisual.panelId
+                        ? paint.feature
+                        : null,
                   seedError:
-                    paint.kind === 'feature' && paint.featureId === featureVisual.id ? paint.featureError : false,
+                    panelResult?.status === 'error' &&
+                    panelResult.scope === featureVisual.scope &&
+                    panelResult.id === featureVisual.panelId &&
+                    panelResult.ano === ano &&
+                    panelResult.mes === mes
+                      ? true
+                      : paint.kind === 'feature' && paint.featureId === featureVisual.panelId
+                        ? paint.featureError
+                        : false,
+                  pending: featurePanelPending(featureVisual),
+                  crossfade: featureVisual.crossfade,
                 }
               : null
           }

@@ -17,6 +17,7 @@ import {
   featureExternalId,
   featureFocusTransform,
   featureViewBounds,
+  pathCommandBounds,
 } from '../../lib/territorialFeatureFocus'
 import { TERRITORIAL_GEOGRAPHY } from '../../lib/territorialDetail'
 import { territoryOption } from '../../lib/territorialSummary'
@@ -48,6 +49,9 @@ const DETAIL_STROKE: Record<Scope, number> = {
   pr: 0.8,
   rmc: 1.15,
 }
+
+/** Lado mínimo clicável, em pixels de tela. O traço extra é transparente. */
+const MIN_FEATURE_HIT_PX = 16
 
 const MOVE_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 const MOVE_EASE_BEZIER = [0.22, 1, 0.36, 1] as const
@@ -392,7 +396,8 @@ export function TerritorialMapStage({
             initial={pose === 'landing' && !reducedMotion ? { opacity: 0 } : false}
             animate={{ opacity: 1 }}
             transition={{ duration: pose === 'landing' && !reducedMotion ? 0.28 : 0, ease: 'easeOut' }}
-            style={{ transformStyle: 'preserve-3d' }}
+            // Contexto 3D no ancestral faz o hit-test do SVG divergir da pintura do rotateX.
+            style={{ transformStyle: 'flat' }}
           >
             <motion.div
               className="h-full w-full"
@@ -474,6 +479,9 @@ export function TerritorialMapStage({
                     interactive={allowHover}
                     clickable={clickable}
                     paintScale={paintScale}
+                    pixelsPerUnit={
+                      clickable && featureMode === 'off' ? (stable * paintScale) / 1000 : 0
+                    }
                     hoverKey={hoverKey}
                     setHover={setHover}
                     selectedId={dimOthers ? featureId : null}
@@ -586,6 +594,7 @@ type TerritoryShapesProps = {
   interactive: boolean
   clickable: boolean
   paintScale: number
+  pixelsPerUnit: number
   hoverKey: string
   setHover: Dispatch<SetStateAction<HoverState | null>>
   selectedId: string | null
@@ -604,6 +613,7 @@ function shapesStay(prev: TerritoryShapesProps, next: TerritoryShapesProps) {
     prev.interactive === next.interactive &&
     prev.clickable === next.clickable &&
     prev.paintScale === next.paintScale &&
+    prev.pixelsPerUnit === next.pixelsPerUnit &&
     prev.selectedId === next.selectedId &&
     prev.dimmed === next.dimmed &&
     prev.opacityMotion === next.opacityMotion
@@ -619,6 +629,7 @@ const TerritoryShapes = memo(function TerritoryShapes({
   interactive,
   clickable,
   paintScale,
+  pixelsPerUnit,
   hoverKey,
   setHover,
   selectedId,
@@ -626,58 +637,102 @@ const TerritoryShapes = memo(function TerritoryShapes({
   opacityMotion,
   onSelectRef,
 }: TerritoryShapesProps) {
-  return paths.map((path, index) => {
-    const hovered = hoverIndex === index
+  const records = paths.map((path, index) => {
     const externalId = featureExternalId(scope, path.properties)
-    const selected = selectedId != null && externalId === selectedId
-    return (
-      <path
-        key={`${path.territoryKey}-${path.featureIndex}-${index}`}
-        d={path.d}
-        data-feature-id={externalId ?? undefined}
-        vectorEffect="non-scaling-stroke"
-        strokeLinejoin="round"
-        style={pathPaint(scope, showMetrics, paints?.[index], hovered, paintScale, selected, dimmed, opacityMotion)}
-        onClick={
-          clickable && externalId
-            ? (event) => {
-                event.stopPropagation()
-                onSelectRef.current?.(externalId)
-              }
-            : undefined
-        }
-        onMouseEnter={
-          interactive
-            ? (event) => {
-                const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect()
-                if (!bounds) return
-                setHover({
-                  index,
-                  x: event.clientX - bounds.left,
-                  y: event.clientY - bounds.top,
-                  key: hoverKey,
-                })
-              }
-            : undefined
-        }
-        onMouseMove={
-          interactive
-            ? (event) => {
-                const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect()
-                if (!bounds) return
-                setHover({
-                  index,
-                  x: event.clientX - bounds.left,
-                  y: event.clientY - bounds.top,
-                  key: hoverKey,
-                })
-              }
-            : undefined
-        }
-        onMouseLeave={interactive ? () => setHover(null) : undefined}
-      />
-    )
+    const bounds = pixelsPerUnit > 0 ? pathCommandBounds(path.d) : null
+    const minSidePx = bounds ? Math.min(bounds.width, bounds.height) * pixelsPerUnit : MIN_FEATURE_HIT_PX
+    return { path, index, externalId, minSidePx }
   })
+  const featureMaxSide = new Map<string, number>()
+  for (const record of records) {
+    if (!record.externalId) continue
+    const current = featureMaxSide.get(record.externalId)
+    if (current == null || record.minSidePx > current) featureMaxSide.set(record.externalId, record.minSidePx)
+  }
+  return (
+    <>
+      {records.map(({ path, externalId, minSidePx, index }) => {
+        const featureSide = externalId ? featureMaxSide.get(externalId) ?? MIN_FEATURE_HIT_PX : MIN_FEATURE_HIT_PX
+        const haloPx =
+          clickable && externalId && featureSide < MIN_FEATURE_HIT_PX && minSidePx < MIN_FEATURE_HIT_PX
+            ? MIN_FEATURE_HIT_PX - minSidePx
+            : 0
+        if (!externalId || haloPx <= 0) return null
+        const pathKey = `${path.territoryKey}-${path.featureIndex}-${index}`
+        return (
+          <path
+            key={`${pathKey}-hit`}
+            d={path.d}
+            data-feature-id={externalId}
+            data-feature-hit=""
+            fill="none"
+            stroke="transparent"
+            strokeWidth={haloPx / Math.max(paintScale, 0.001)}
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+            pointerEvents="stroke"
+            style={{ cursor: 'pointer' }}
+            onClick={(event) => {
+              event.stopPropagation()
+              onSelectRef.current?.(externalId)
+            }}
+          />
+        )
+      })}
+      {records.map(({ path, index, externalId }) => {
+        const hovered = hoverIndex === index
+        const selected = selectedId != null && externalId === selectedId
+        return (
+          <path
+            key={`${path.territoryKey}-${path.featureIndex}-${index}`}
+            d={path.d}
+            data-feature-id={externalId ?? undefined}
+            vectorEffect="non-scaling-stroke"
+            strokeLinejoin="round"
+            pointerEvents={clickable ? 'fill' : undefined}
+            style={pathPaint(scope, showMetrics, paints?.[index], hovered, paintScale, selected, dimmed, opacityMotion)}
+            onClick={
+              clickable && externalId
+                ? (event) => {
+                    event.stopPropagation()
+                    onSelectRef.current?.(externalId)
+                  }
+                : undefined
+            }
+            onMouseEnter={
+              interactive
+                ? (event) => {
+                    const rect = event.currentTarget.ownerSVGElement?.getBoundingClientRect()
+                    if (!rect) return
+                    setHover({
+                      index,
+                      x: event.clientX - rect.left,
+                      y: event.clientY - rect.top,
+                      key: hoverKey,
+                    })
+                  }
+                : undefined
+            }
+            onMouseMove={
+              interactive
+                ? (event) => {
+                    const rect = event.currentTarget.ownerSVGElement?.getBoundingClientRect()
+                    if (!rect) return
+                    setHover({
+                      index,
+                      x: event.clientX - rect.left,
+                      y: event.clientY - rect.top,
+                      key: hoverKey,
+                    })
+                  }
+                : undefined
+            }
+            onMouseLeave={interactive ? () => setHover(null) : undefined}
+          />
+        )
+      })}
+    </>
+  )
 }, shapesStay)
 
 function pathPaint(

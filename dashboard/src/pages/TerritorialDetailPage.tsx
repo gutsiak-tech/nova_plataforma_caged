@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref, type TransitionEvent } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import { fetchOverview, fetchTable } from '../api/gold'
 import { GOLD_COLUMNS } from '../api/goldColumns'
 import { GOLD_TABLES } from '../api/goldTables'
@@ -15,12 +13,6 @@ import { fetchCompleteTable } from '../lib/completeTable'
 import { rankTerritorialUnits, TERRITORIAL_GEOGRAPHY } from '../lib/territorialDetail'
 import type { DetailFirstPaint, FeatureFirstPaint } from '../components/territorial/territorialFirstPaint'
 import { buildRequestContextKey, responseMatchesRequest } from '../lib/requestContext'
-import {
-  retreatTerritorialHistory,
-  territorialDetailLocation,
-  territorialLandingLocation,
-} from '../lib/territorialPose'
-import { territoryOption } from '../lib/territorialSummary'
 
 const EMPTY_ROWS: GoldRow[] = []
 
@@ -31,6 +23,8 @@ export type TerritorialFeatureChrome = {
   instant: boolean
   seed: FeatureFocusPayload | null
   seedError: boolean
+  pending: boolean
+  crossfade: boolean
 }
 
 type DetailPayload = {
@@ -60,10 +54,8 @@ export function TerritorialDetailPage({
   feature?: TerritorialFeatureChrome | null
   onFeaturePanelExited?: () => void
 }) {
-  const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
   const { setScope } = useScope()
-  const { ano, mes, label, competencia, competencias, setCompetencia } = useMonth()
+  const { ano, mes, label } = useMonth()
   const [retryKey, setRetryKey] = useState(0)
   const requestKey = buildRequestContextKey(scope, ano, mes)
   const [loaded, setLoaded] = useState<DetailPayload | null>(() =>
@@ -138,7 +130,6 @@ export function TerritorialDetailPage({
   const overviewError = ready ? loaded.overviewError : false
   const tableError = ready ? loaded.tableError : false
   const geography = TERRITORIAL_GEOGRAPHY[scope]
-  const territory = territoryOption(scope)
   const ranking = table ? rankTerritorialUnits(table.rows, scope) : []
   const mapLoading = !ready || (!table && !tableError)
   const mapRows = table?.rows ?? EMPTY_ROWS
@@ -156,66 +147,7 @@ export function TerritorialDetailPage({
 
   return (
     <div className="territorial-detail-screen flex min-h-dvh flex-col bg-[#f7f5f0] text-[#1a2130] lg:h-dvh lg:overflow-hidden">
-      <header className="territorial-detail-header flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[#e4dfd4] px-4 py-2.5 sm:px-5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <img src="/estudio_logo.png" alt="" className="h-8 w-8 shrink-0 rounded-lg" aria-hidden />
-          <div className="flex min-w-0 items-center gap-x-2.5">
-            <p className="text-sm font-semibold leading-[1.15] tracking-[-0.02em] text-[#1a2130]">
-              Plataforma
-              <br />
-              Becker
-            </p>
-            <p className="whitespace-nowrap text-[13px] font-medium leading-none text-[#5d6678]">
-              powered by vonturing.tech
-            </p>
-          </div>
-        </div>
-
-        <p className="text-sm font-semibold tracking-tight text-[#1a2130]">{territory.name}</p>
-
-        <div className="flex items-center justify-end gap-4 sm:gap-5">
-          {feature ? (
-            <button
-              type="button"
-              onClick={() => {
-                if (feature.leaving) return
-                retreatTerritorialHistory(
-                  navigate,
-                  territorialDetailLocation(scope, searchParams.toString()),
-                )
-              }}
-              aria-label="Voltar ao mapa do território"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-[#5d6678] underline-offset-4 hover:text-[#1a2130] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ebc617]"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-              Voltar
-            </button>
-          ) : (
-            <Link
-              to={territorialLandingLocation(searchParams.toString())}
-              aria-label="Voltar à entrada territorial"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-[#5d6678] underline-offset-4 hover:text-[#1a2130] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ebc617]"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-              Voltar
-            </Link>
-          )}
-          <label className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#727d91]">
-            Competência
-            <select
-              value={competencia}
-              onChange={(event) => setCompetencia(event.target.value)}
-              className="mt-0.5 block w-[11.5rem] border-0 border-b border-[#1a2130] bg-transparent pb-0.5 text-sm font-semibold normal-case tracking-normal text-[#1a2130] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ebc617] sm:w-52"
-            >
-              {competencias.map((item) => (
-                <option key={item.competencia} value={item.competencia}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </header>
+      <div className="territorial-header-reserve" aria-hidden />
 
       <div className="territorial-detail-grid grid flex-1 grid-cols-1 lg:min-h-0 lg:grid-cols-[minmax(17.5rem,25%)_minmax(0,1fr)]">
         <aside className="territorial-detail-sidebar relative min-w-0 lg:h-full lg:min-h-0 lg:overflow-hidden lg:border-r lg:border-[#e4dfd4]">
@@ -242,15 +174,20 @@ export function TerritorialDetailPage({
               instant={feature.instant}
               onExited={onFeaturePanelExited}
             >
-              <TerritorialFeaturePanel
-                scope={scope}
-                featureId={feature.id}
-                ano={ano}
-                mes={mes}
-                competenceLabel={label}
-                seed={feature.seed}
-                seedError={feature.seedError}
-              />
+              <div key={feature.id} className={feature.crossfade ? 'territorial-feature-panel-swap' : undefined}>
+                <TerritorialFeaturePanel
+                  scope={scope}
+                  featureId={feature.id}
+                  ano={ano}
+                  mes={mes}
+                  competenceLabel={label}
+                  seed={feature.seed}
+                  seedError={feature.seedError}
+                />
+              </div>
+              {feature.pending ? (
+                <p className="territorial-feature-pending">Carregando</p>
+              ) : null}
             </FeatureReveal>
           ) : null}
         </aside>

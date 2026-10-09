@@ -336,6 +336,32 @@
   pointer-events: auto;
 }
 
+.territorial-feature-panel-swap {
+  animation: territorial-feature-panel-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.territorial-feature-pending {
+  position: absolute;
+  top: 1rem;
+  right: 1.25rem;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #9a7b12;
+  pointer-events: none;
+}
+
+@keyframes territorial-feature-panel-in {
+  from {
+    opacity: 0.82;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @media (max-height: 940px) {
   .territorial-detail-scroll,
   .territorial-feature-reveal {
@@ -379,10 +405,63 @@
 }
 
 .territorial-experience {
+  --territorial-brand-x: 1.25rem;
+  --territorial-brand-y: calc(1.25rem + 0.5rem);
+  --territorial-header-bottom: 0.625rem;
+  --territorial-header-h: calc(var(--territorial-brand-y) + 3rem + var(--territorial-header-bottom));
   position: relative;
   height: 100dvh;
   overflow: hidden;
   background: #f7f5f0;
+}
+
+@media (min-width: 640px) {
+  .territorial-experience {
+    --territorial-brand-x: 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .territorial-experience {
+    --territorial-brand-x: 2.5rem;
+    --territorial-brand-y: calc(clamp(0.75rem, 1.5vh, 1.15rem) + 0.25rem);
+  }
+}
+
+.territorial-persistent-header {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  pointer-events: none;
+}
+
+.territorial-persistent-header[data-pose='landing'] {
+  top: var(--territorial-brand-y);
+  left: var(--territorial-brand-x);
+}
+
+.territorial-persistent-header[data-pose='detail'] {
+  top: 0;
+  right: 0;
+  left: 0;
+  box-sizing: border-box;
+  height: var(--territorial-header-h);
+  padding: var(--territorial-brand-y) var(--territorial-brand-x) var(--territorial-header-bottom);
+  background: #f7f5f0;
+  box-shadow: inset 0 -1px 0 #e4dfd4;
+  pointer-events: auto;
+}
+
+.territorial-persistent-header .territorial-brand-mark {
+  pointer-events: auto;
+}
+
+.territorial-header-reserve {
+  height: var(--territorial-header-h);
+  flex-shrink: 0;
 }
 
 .territorial-experience-layer {
@@ -426,7 +505,6 @@
   background-color: transparent;
 }
 
-.territorial-experience-layer[data-feature='open'] .territorial-detail-header,
 .territorial-experience-layer[data-feature='open'] .territorial-detail-sidebar {
   pointer-events: auto;
   background-color: #f7f5f0;
@@ -436,6 +514,10 @@
   .territorial-experience-layer,
   .territorial-feature-reveal {
     transition: none;
+  }
+
+  .territorial-feature-panel-swap {
+    animation: none;
   }
 }
 

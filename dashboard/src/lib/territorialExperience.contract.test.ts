@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import experienceSource from '../components/territorial/TerritorialExperience.tsx?raw'
+import chromeSource from '../components/territorial/TerritorialChrome.tsx?raw'
 import stageSource from '../components/territorial/TerritorialMapStage.tsx?raw'
 import landingSource from '../pages/TerritorialLandingPage.tsx?raw'
 import detailSource from '../pages/TerritorialDetailPage.tsx?raw'
@@ -19,6 +20,7 @@ import {
 
 const files: Record<string, string> = {
   experience: experienceSource,
+  chrome: chromeSource,
   stage: stageSource,
   landing: landingSource,
   detail: detailSource,
@@ -120,13 +122,16 @@ describe('territorial experience contract', () => {
     expect(files.stage).toContain('onAnimationComplete={onMoveComplete}')
     expect(files.stage).toContain('preserveAspectRatio="xMidYMid meet"')
     expect(files.stage).toContain('CANONICAL_VIEW_BOX')
+    expect(files.stage).toContain("transformStyle: 'flat'")
+    expect(files.stage).not.toContain('preserve-3d')
   })
 
   it('opens and returns with one navigation each', () => {
     expect(files.landing).toContain(
       'navigate(territorialDetailLocation(selected, searchParams.toString()))',
     )
-    expect(files.detail).toContain('territorialLandingLocation(searchParams.toString())')
+    expect(files.chrome).toContain('territorialLandingLocation(search)')
+    expect(files.experience).toContain('<TerritorialChrome')
     expect(files.landing).not.toContain('setTimeout')
     expect(files.detail).not.toContain('setTimeout')
   })

@@ -91,26 +91,7 @@ export function TerritorialLandingPage({
     <div className="min-h-screen bg-[#f7f5f0] text-[#1a2130] lg:h-dvh">
       <div className="grid min-h-screen px-5 py-5 sm:px-8 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(20rem,24%)_minmax(0,1fr)] lg:gap-x-12 lg:px-10 lg:py-[clamp(0.75rem,1.5vh,1.15rem)] xl:gap-x-16">
         <section className="flex flex-col py-2 lg:h-full lg:min-h-0 lg:py-1">
-          <header className="flex items-center">
-            <div className="flex min-w-0 items-center gap-3">
-              <img
-                src="/estudio_logo.png"
-                alt=""
-                className="h-11 w-11 shrink-0 rounded-xl"
-                aria-hidden
-              />
-              <div className="flex min-w-0 items-center gap-x-2.5">
-                <p className="text-sm font-semibold leading-[1.15] tracking-[-0.02em] text-[#1a2130]">
-                  Plataforma
-                  <br />
-                  Becker
-                </p>
-                <p className="whitespace-nowrap text-[13px] font-medium leading-none text-[#5d6678]">
-                  powered by vonturing.tech
-                </p>
-              </div>
-            </div>
-          </header>
+          <div className="h-12 shrink-0" data-territorial-brand-slot="" aria-hidden />
 
           <div className="flex flex-1 flex-col justify-center py-10 lg:justify-start lg:py-0 lg:pt-[clamp(1.25rem,5vh,3rem)]">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9a7b12]">
