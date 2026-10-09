@@ -22,6 +22,7 @@ import {
 import { TerritorialChrome } from './TerritorialChrome'
 import { TerritorialRouteLoading } from './TerritorialRouteLoading'
 import { loadTerritorialFirstPaint, type TerritorialFirstPaint } from './territorialFirstPaint'
+import { competenceMonthKey } from '../../lib/territorialCompetence'
 import {
   featureChromeOnPose,
   featurePanelPending,
@@ -116,6 +117,17 @@ export function TerritorialExperience() {
   if (detailScope && picked !== detailScope) setPicked(detailScope)
   const search = searchParams.toString()
   const moveMs = territorialMoveDuration(reduced)
+  const monthKey = competenceMonthKey(ano, mes)
+  const [settledMonth, setSettledMonth] = useState(monthKey)
+  const competenceHold = settledMonth !== monthKey
+  const [competenceHost, setCompetenceHost] = useState<HTMLDivElement | null>(null)
+  const onCompetenceSettled = useCallback(
+    (key: string) => {
+      if (key !== monthKey) return
+      setSettledMonth((current) => (current === key ? current : key))
+    },
+    [monthKey],
+  )
 
   useEffect(() => {
     if (!requestKey || paint || pose.kind === 'invalid') return
@@ -345,7 +357,11 @@ export function TerritorialExperience() {
   )
 
   return (
-    <div ref={rootRef} className="territorial-experience">
+    <div
+      ref={rootRef}
+      className="territorial-experience"
+      data-competence-hold={competenceHold ? 'true' : 'false'}
+    >
       <TerritorialChrome
         pose={poseKey}
         scope={scope}
@@ -356,14 +372,18 @@ export function TerritorialExperience() {
         className="territorial-experience-layer"
         data-layer="landing"
         data-active={poseKey === 'landing' ? 'true' : 'false'}
-        inert={poseKey !== 'landing'}
-        aria-hidden={poseKey !== 'landing'}
+        inert={poseKey !== 'landing' || competenceHold}
+        aria-hidden={poseKey !== 'landing' || competenceHold}
         style={{ transitionDuration: `${moveMs}ms` }}
       >
         <TerritorialLandingPage
           selected={scope}
           onSelectedChange={setPicked}
           initialPaint={paint.kind === 'landing' ? paint : null}
+          active={poseKey === 'landing'}
+          competenceHold={competenceHold}
+          competenceHost={competenceHost}
+          onCompetenceSettled={onCompetenceSettled}
           mapSlot={
             <div
               ref={landingSlotRef}
@@ -377,8 +397,8 @@ export function TerritorialExperience() {
         data-layer="detail"
         data-feature={featureVisual ? 'open' : 'closed'}
         data-active={poseKey === 'detail' ? 'true' : 'false'}
-        inert={poseKey !== 'detail'}
-        aria-hidden={poseKey !== 'detail'}
+        inert={poseKey !== 'detail' || competenceHold}
+        aria-hidden={poseKey !== 'detail' || competenceHold}
         style={{ transitionDuration: `${moveMs}ms` }}
       >
         <TerritorialDetailPage
@@ -421,6 +441,8 @@ export function TerritorialExperience() {
               : null
           }
           onFeaturePanelExited={onFeaturePanelExited}
+          competenceHold={competenceHold}
+          onCompetenceSettled={onCompetenceSettled}
         />
       </div>
       {frame ? (
@@ -441,6 +463,16 @@ export function TerritorialExperience() {
         />
       ) : null}
       <Outlet />
+      {competenceHold ? (
+        <>
+          <div className="territorial-competence-cover">
+            <TerritorialRouteLoading />
+          </div>
+          {poseKey === 'landing' ? (
+            <div ref={setCompetenceHost} className="territorial-competence-select-host" />
+          ) : null}
+        </>
+      ) : null}
     </div>
   )
 }

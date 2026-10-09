@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref, type TransitionEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type Ref, type TransitionEvent } from 'react'
 import { fetchOverview, fetchTable } from '../api/gold'
 import { GOLD_COLUMNS } from '../api/goldColumns'
 import { GOLD_TABLES } from '../api/goldTables'
@@ -12,6 +12,10 @@ import { useScope } from '../context/ScopeContext'
 import { fetchCompleteTable } from '../lib/completeTable'
 import { rankTerritorialUnits, TERRITORIAL_GEOGRAPHY } from '../lib/territorialDetail'
 import type { DetailFirstPaint, FeatureFirstPaint } from '../components/territorial/territorialFirstPaint'
+import {
+  peekDetailCompetence,
+  rememberDetailCompetence,
+} from '../lib/territorialCompetence'
 import { buildRequestContextKey, responseMatchesRequest } from '../lib/requestContext'
 
 const EMPTY_ROWS: GoldRow[] = []
@@ -44,6 +48,8 @@ export function TerritorialDetailPage({
   onBindRetry,
   feature = null,
   onFeaturePanelExited,
+  competenceHold = false,
+  onCompetenceSettled,
 }: {
   scope: Scope
   active: boolean
@@ -53,6 +59,8 @@ export function TerritorialDetailPage({
   onBindRetry?: (retry: () => void) => void
   feature?: TerritorialFeatureChrome | null
   onFeaturePanelExited?: () => void
+  competenceHold?: boolean
+  onCompetenceSettled?: (monthKey: string) => void
 }) {
   const { setScope } = useScope()
   const { ano, mes, label } = useMonth()
@@ -70,7 +78,18 @@ export function TerritorialDetailPage({
       : null,
   )
   const skipReadyFetch = useRef(loaded?.key === requestKey)
+  const featureReadyRef = useRef(feature == null)
+  const [featureEpoch, setFeatureEpoch] = useState(0)
   const retry = useCallback(() => setRetryKey((current) => current + 1), [])
+  const onFeatureCompetence = useCallback((ready: boolean) => {
+    if (featureReadyRef.current === ready) return
+    featureReadyRef.current = ready
+    setFeatureEpoch((value) => value + 1)
+  }, [])
+  if (retryKey === 0) {
+    const cached = peekDetailCompetence(scope, ano, mes)
+    if (cached && loaded?.key !== requestKey) setLoaded(cached)
+  }
 
   useEffect(() => {
     onBindRetry?.(retry)
@@ -110,13 +129,15 @@ export function TerritorialDetailPage({
         tableResult.status === 'fulfilled' && responseMatchesRequest(tableResult.value, key)
           ? tableResult.value
           : null
-      setLoaded({
+      const next = {
         key,
         overview,
         table,
         overviewError: overviewResult.status === 'rejected' || overview === null,
         tableError: tableResult.status === 'rejected' || table === null,
-      })
+      }
+      rememberDetailCompetence(next)
+      setLoaded(next)
     })
 
     return () => {
@@ -125,16 +146,25 @@ export function TerritorialDetailPage({
   }, [scope, ano, mes, requestKey, retryKey])
 
   const ready = loaded?.key === requestKey
-  const overview = ready ? loaded.overview : null
-  const table = ready ? loaded.table : null
-  const overviewError = ready ? loaded.overviewError : false
-  const tableError = ready ? loaded.tableError : false
+  const held = competenceHold && !ready && loaded != null
+  const visible = ready || held ? loaded : null
+  const overview = visible?.overview ?? null
+  const table = visible?.table ?? null
+  const overviewError = visible?.overviewError ?? false
+  const tableError = visible?.tableError ?? false
   const geography = TERRITORIAL_GEOGRAPHY[scope]
   const ranking = table ? rankTerritorialUnits(table.rows, scope) : []
-  const mapLoading = !ready || (!table && !tableError)
+  const mapLoading = held ? false : !ready || (!table && !tableError)
   const mapRows = table?.rows ?? EMPTY_ROWS
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!active || !ready) return
+    if (feature && !featureReadyRef.current) return
+    onCompetenceSettled?.(`${ano}-${mes}`)
+  }, [active, ready, feature, ano, mes, featureEpoch, onCompetenceSettled])
+
+  useLayoutEffect(() => {
+    if (competenceHold && !ready) return
     onMapModel({
       scope,
       rows: mapRows,
@@ -143,7 +173,7 @@ export function TerritorialDetailPage({
       dataKey: `${requestKey}:${retryKey}`,
       onRetry: retry,
     })
-  }, [onMapModel, scope, mapRows, mapLoading, tableError, requestKey, retryKey, retry])
+  }, [competenceHold, onMapModel, scope, mapRows, mapLoading, tableError, requestKey, retryKey, retry, ready])
 
   return (
     <div className="territorial-detail-screen flex min-h-dvh flex-col bg-[#f7f5f0] text-[#1a2130] lg:h-dvh lg:overflow-hidden">
@@ -157,12 +187,12 @@ export function TerritorialDetailPage({
                 scope={scope}
                 competenceLabel={label}
                 overview={overview}
-                loading={!ready}
+                loading={!ready && !held}
                 error={overviewError}
                 onRetry={retry}
                 rankTitle={geography.rankTitle}
                 ranking={ranking}
-                rankingLoading={!ready || (!table && !tableError)}
+                rankingLoading={held ? false : !ready || (!table && !tableError)}
                 rankingError={tableError}
               />
             </div>
@@ -183,6 +213,7 @@ export function TerritorialDetailPage({
                   competenceLabel={label}
                   seed={feature.seed}
                   seedError={feature.seedError}
+                  onCompetenceReady={onFeatureCompetence}
                 />
               </div>
               {feature.pending ? (

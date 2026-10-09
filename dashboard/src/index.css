@@ -428,6 +428,28 @@
   }
 }
 
+.territorial-competence-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  background: #f7f5f0;
+}
+
+.territorial-competence-cover [data-territorial-loading] {
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+}
+
+.territorial-competence-select-host {
+  position: absolute;
+  z-index: 7;
+  top: var(--territorial-brand-y);
+  right: var(--territorial-brand-x);
+  pointer-events: auto;
+}
+
 .territorial-persistent-header {
   position: absolute;
   z-index: 6;

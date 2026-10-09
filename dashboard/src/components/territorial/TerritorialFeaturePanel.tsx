@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import {
   FEATURE_FOCUS_MOVEMENT,
   fetchFeatureFocus,
@@ -13,7 +13,7 @@ import { formatCurrencyBRL, formatInt, formatSignedInt, shortCompetenciaLabel } 
 type PanelStatus =
   | { status: 'loading' }
   | { status: 'ready'; data: FeatureFocusPayload }
-  | { status: 'error' }
+  | { status: 'error'; featureId: string; ano: number; mes: number }
 
 function ModuleTitle({ children }: { children: string }) {
   return (
@@ -44,6 +44,7 @@ export function TerritorialFeaturePanel({
   competenceLabel,
   seed,
   seedError,
+  onCompetenceReady,
 }: {
   scope: Scope
   featureId: string
@@ -52,50 +53,61 @@ export function TerritorialFeaturePanel({
   competenceLabel: string
   seed: FeatureFocusPayload | null
   seedError: boolean
+  onCompetenceReady?: (ready: boolean) => void
 }) {
   const [attempt, setAttempt] = useState(0)
   const [panel, setPanel] = useState<PanelStatus>(() => {
     if (seed) return { status: 'ready', data: seed }
     const cached = peekFeatureFocus(scope, featureId, ano, mes)
     if (cached) return { status: 'ready', data: cached }
-    if (seedError) return { status: 'error' }
+    if (seedError) return { status: 'error', featureId, ano, mes }
     return { status: 'loading' }
   })
+  const cachedNow = peekFeatureFocus(scope, featureId, ano, mes)
+  if (
+    cachedNow &&
+    cachedNow.identity.id === featureId &&
+    cachedNow.period.ano === ano &&
+    cachedNow.period.mes === mes &&
+    (panel.status !== 'ready' ||
+      panel.data.identity.id !== featureId ||
+      panel.data.period.ano !== ano ||
+      panel.data.period.mes !== mes)
+  ) {
+    setPanel({ status: 'ready', data: cachedNow })
+  }
 
   useEffect(() => {
-    const cached = peekFeatureFocus(scope, featureId, ano, mes)
-    if (cached && attempt === 0) {
-      setPanel({ status: 'ready', data: cached })
-      return
-    }
-    if (seedError && attempt === 0 && !cached) {
-      setPanel({ status: 'error' })
-      return
-    }
-
+    if (peekFeatureFocus(scope, featureId, ano, mes)) return
     let cancelled = false
-    setPanel((current) => {
-      if (
-        current.status === 'ready' &&
-        current.data.identity.id === featureId &&
-        current.data.period.ano === ano &&
-        current.data.period.mes === mes
-      ) {
-        return current
-      }
-      return { status: 'loading' }
-    })
     fetchFeatureFocus(scope, featureId, ano, mes)
       .then((data) => {
-        if (!cancelled) setPanel({ status: 'ready', data })
+        if (cancelled || data.identity.id !== featureId || data.period.ano !== ano || data.period.mes !== mes) {
+          return
+        }
+        setPanel({ status: 'ready', data })
       })
       .catch(() => {
-        if (!cancelled) setPanel({ status: 'error' })
+        if (!cancelled) setPanel({ status: 'error', featureId, ano, mes })
       })
     return () => {
       cancelled = true
     }
-  }, [scope, featureId, ano, mes, attempt, seedError])
+  }, [scope, featureId, ano, mes, attempt])
+
+  const periodReady =
+    (panel.status === 'error' &&
+      panel.featureId === featureId &&
+      panel.ano === ano &&
+      panel.mes === mes) ||
+    (panel.status === 'ready' &&
+      panel.data.identity.id === featureId &&
+      panel.data.period.ano === ano &&
+      panel.data.period.mes === mes)
+
+  useLayoutEffect(() => {
+    onCompetenceReady?.(periodReady)
+  }, [onCompetenceReady, periodReady])
 
   if (panel.status === 'loading') {
     return (
@@ -114,7 +126,10 @@ export function TerritorialFeaturePanel({
         </p>
         <button
           type="button"
-          onClick={() => setAttempt((current) => current + 1)}
+          onClick={() => {
+            setPanel({ status: 'loading' })
+            setAttempt((current) => current + 1)
+          }}
           className="text-sm font-semibold text-[#1a2130] underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ebc617]"
         >
           Tentar novamente

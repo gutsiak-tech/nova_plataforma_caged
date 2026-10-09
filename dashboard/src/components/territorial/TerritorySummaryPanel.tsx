@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowUpRight } from 'lucide-react'
 import clsx from 'clsx'
 import type { Competencia, OverviewResponse, Scope } from '../../api/types'
@@ -22,6 +23,8 @@ type TerritorySummaryPanelProps = {
   competencias: Competencia[]
   onCompetenciaChange: (competencia: string) => void
   mapSlot: ReactNode
+  competenceHost?: HTMLElement | null
+  suspendSkeleton?: boolean
 }
 
 function Kpi({
@@ -60,11 +63,44 @@ export function TerritorySummaryPanel({
   competencias,
   onCompetenciaChange,
   mapSlot,
+  competenceHost = null,
+  suspendSkeleton = false,
 }: TerritorySummaryPanelProps) {
   const territory = territoryOption(scope)
   const kpis = overview ? territorialKpis(overview) : null
   const sectors = topSectorAdmissions(overview?.rankings.setor, 3)
   const maxSector = Math.max(...sectors.map((sector) => sector.value), 1)
+  const competenceControl = (
+    <label
+      data-territorial-competence=""
+      className={
+        competenceHost
+          ? 'text-[10px] font-semibold uppercase tracking-[0.16em] text-[#727d91]'
+          : 'shrink-0 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/60'
+      }
+    >
+      Competência
+      <select
+        value={competencia}
+        onChange={(event) => onCompetenciaChange(event.target.value)}
+        className={
+          competenceHost
+            ? 'mt-0.5 block w-[11.5rem] border-0 border-b border-[#1a2130] bg-transparent pb-0.5 text-sm font-semibold normal-case tracking-normal text-[#1a2130] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ebc617] sm:w-52'
+            : 'scheme-dark mt-1 block w-full min-w-[14rem] border-0 border-b border-white/40 bg-transparent pb-0.5 text-base font-semibold normal-case tracking-normal text-[color:var(--ds-brand-white)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ds-brand-gold)]'
+        }
+      >
+        {competencias.map((item) => (
+          <option
+            key={item.competencia}
+            value={item.competencia}
+            className="bg-[color:var(--ds-brand-navy-deep)] text-[color:var(--ds-brand-white)]"
+          >
+            {item.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
   const copy = kpis
     ? territorialExecutiveCopy({
         territoryName: territory.name,
@@ -94,24 +130,7 @@ export function TerritorySummaryPanel({
             </p>
           ) : null}
         </div>
-        <label className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/60">
-          Competência
-          <select
-            value={competencia}
-            onChange={(event) => onCompetenciaChange(event.target.value)}
-            className="scheme-dark mt-1 block w-full min-w-[14rem] border-0 border-b border-white/40 bg-transparent pb-0.5 text-base font-semibold normal-case tracking-normal text-[color:var(--ds-brand-white)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ds-brand-gold)]"
-          >
-            {competencias.map((item) => (
-              <option
-                key={item.competencia}
-                value={item.competencia}
-                className="bg-[color:var(--ds-brand-navy-deep)] text-[color:var(--ds-brand-white)]"
-              >
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {competenceHost ? createPortal(competenceControl, competenceHost) : competenceControl}
       </header>
 
       {error ? (
@@ -127,12 +146,14 @@ export function TerritorySummaryPanel({
             Tentar novamente
           </button>
         </div>
-      ) : loading || !kpis ? (
-        <div className="mt-8 grid gap-8 sm:grid-cols-2 xl:grid-cols-4" aria-busy="true">
-          {Array.from({ length: 4 }, (_, index) => (
-            <div key={index} className="h-16 animate-pulse bg-[#efece4]" />
-          ))}
-        </div>
+      ) : !kpis ? (
+        suspendSkeleton || !loading ? null : (
+          <div className="mt-8 grid gap-8 sm:grid-cols-2 xl:grid-cols-4" aria-busy="true">
+            {Array.from({ length: 4 }, (_, index) => (
+              <div key={index} className="h-16 animate-pulse bg-[#efece4]" />
+            ))}
+          </div>
+        )
       ) : (
         <>
           <div className="mt-[clamp(1.05rem,2.1vh,1.4rem)] grid min-h-0 grid-cols-1 items-center gap-5 lg:grid-cols-[minmax(11rem,30%)_minmax(0,1fr)] lg:gap-x-[5%] lg:gap-y-0">

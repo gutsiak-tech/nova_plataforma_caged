@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import { motion } from 'framer-motion'
@@ -20,11 +20,19 @@ export function TerritorialLandingPage({
   onSelectedChange,
   mapSlot,
   initialPaint = null,
+  active = true,
+  competenceHold = false,
+  competenceHost = null,
+  onCompetenceSettled,
 }: {
   selected: Scope
   onSelectedChange: (scope: Scope) => void
   mapSlot: ReactNode
   initialPaint?: LandingFirstPaint | null
+  active?: boolean
+  competenceHold?: boolean
+  competenceHost?: HTMLElement | null
+  onCompetenceSettled?: (monthKey: string) => void
 }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -51,6 +59,12 @@ export function TerritorialLandingPage({
   })
   const skipReadyFetch = useRef(loaded?.key === requestKey)
   const [cardEntered, setCardEntered] = useState(false)
+  if (retryKey === 0) {
+    const cached = peekLandingFirstPaint(ano, mes)
+    if (cached && loaded?.key !== requestKey) {
+      setLoaded({ key: requestKey, overviews: cached.overviews, error: cached.error })
+    }
+  }
 
   useEffect(() => {
     if (skipReadyFetch.current) {
@@ -78,9 +92,16 @@ export function TerritorialLandingPage({
   }, [])
 
   const ready = loaded?.key === requestKey
-  const overviews = ready ? loaded.overviews : {}
-  const loading = !ready
-  const error = ready && loaded.error
+  const held = competenceHold && !ready && loaded != null
+  const visible = ready || held ? loaded : null
+  const overviews = visible?.overviews ?? {}
+  const loading = !ready && !held
+  const error = visible?.error ?? false
+
+  useLayoutEffect(() => {
+    if (!active || !ready) return
+    onCompetenceSettled?.(`${ano}-${mes}`)
+  }, [active, ready, ano, mes, onCompetenceSettled])
 
   function openDetailedView() {
     setScope(selected)
@@ -159,6 +180,8 @@ export function TerritorialLandingPage({
             competencias={competencias}
             onCompetenciaChange={setCompetencia}
             mapSlot={mapSlot}
+            competenceHost={active && competenceHold ? competenceHost : null}
+            suspendSkeleton={competenceHold}
           />
         </motion.section>
       </div>
