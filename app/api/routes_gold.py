@@ -16,6 +16,11 @@ from app.services.gold_catalog_service import (
     load_gold_catalog,
     normalize_catalog_scope_filter,
 )
+from app.services.territorial_response_cache import territorial_response_cache
+from app.services.territorial_response_sources import (
+    overview_logical_key,
+    overview_sources,
+)
 from app.services.gold_service import (
     CompetenciaNotFoundError,
     DefaultCompetenciaError,
@@ -358,17 +363,11 @@ def table(
         ) from exc
 
 
-@router.get("/overview")
-def overview(
-    scope: str = Query("br"),
-    ano: int | None = Query(None),
-    mes: int | None = Query(None),
-    movimento: str = Query("admissao"),
-):
-    sc = _parse_scope(scope)
-    salary_movement = _parse_salary_movement(movimento)
-    month = _resolve_month(ano, mes)
-    _ensure_competencia(month)
+def _overview_payload(
+    sc: Scope,
+    month: GoldMonthRef,
+    salary_movement: SalaryMovement,
+) -> dict[str, Any]:
 
     resumo_row = None
     if sc == "br":
@@ -515,3 +514,21 @@ def overview(
         },
     }
     return payload
+
+
+@router.get("/overview")
+def overview(
+    scope: str = Query("br"),
+    ano: int | None = Query(None),
+    mes: int | None = Query(None),
+    movimento: str = Query("admissao"),
+):
+    sc = _parse_scope(scope)
+    salary_movement = _parse_salary_movement(movimento)
+    month = _resolve_month(ano, mes)
+    _ensure_competencia(month)
+    return territorial_response_cache.serve(
+        overview_logical_key(sc, month.ano, month.mes, salary_movement),
+        overview_sources(sc, month),
+        lambda: _overview_payload(sc, month, salary_movement),
+    )

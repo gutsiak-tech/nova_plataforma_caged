@@ -77,7 +77,7 @@ export function TerritorialDetailPage({
         }
       : null,
   )
-  const skipReadyFetch = useRef(loaded?.key === requestKey)
+  const skipReadyFetch = useRef<string | null>(loaded?.key === requestKey ? requestKey : null)
   const featureReadyRef = useRef(feature == null)
   const [featureEpoch, setFeatureEpoch] = useState(0)
   const retry = useCallback(() => setRetryKey((current) => current + 1), [])
@@ -101,10 +101,12 @@ export function TerritorialDetailPage({
   }, [active, scope, setScope])
 
   useEffect(() => {
-    if (skipReadyFetch.current) {
-      skipReadyFetch.current = false
+    if (!active) return
+    if (skipReadyFetch.current === requestKey) {
+      skipReadyFetch.current = null
       return
     }
+    skipReadyFetch.current = null
     let cancelled = false
     const key = requestKey
     const tableName = scope === 'br' ? GOLD_TABLES.UF : GOLD_TABLES.MUNICIPIO
@@ -143,7 +145,7 @@ export function TerritorialDetailPage({
     return () => {
       cancelled = true
     }
-  }, [scope, ano, mes, requestKey, retryKey])
+  }, [active, scope, ano, mes, requestKey, retryKey])
 
   const ready = loaded?.key === requestKey
   const held = competenceHold && !ready && loaded != null

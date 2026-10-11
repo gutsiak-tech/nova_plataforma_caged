@@ -205,16 +205,27 @@ def clear_gold_read_cache() -> dict[str, int]:
     A leitura já incorpora mtime/tamanho do arquivo na chave de cache; esta
     função garante dados frescos quando metadados do arquivo não mudam ou em
     rotinas operacionais após o pipeline mensal.
+
+    Também descarta o cache de resposta territorial. Sem isso, um arquivo
+    reescrito com o mesmo mtime e tamanho continuaria servindo o payload antigo.
     """
+    from app.services.territorial_response_cache import clear_territorial_response_cache
+
     csv_before = _read_csv_cached.cache_info().currsize
     parquet_before = _read_parquet_cached.cache_info().currsize
     _read_csv_cached.cache_clear()
     _read_parquet_cached.cache_clear()
-    cleared = {"csv_entries": csv_before, "parquet_entries": parquet_before}
+    response_entries = clear_territorial_response_cache()
+    cleared = {
+        "csv_entries": csv_before,
+        "parquet_entries": parquet_before,
+        "response_entries": response_entries,
+    }
     logger.info(
-        "Gold read cache cleared | csv_entries=%s | parquet_entries=%s",
+        "Gold read cache cleared | csv_entries=%s | parquet_entries=%s | response_entries=%s",
         csv_before,
         parquet_before,
+        response_entries,
     )
     return cleared
 

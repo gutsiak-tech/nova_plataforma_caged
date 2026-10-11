@@ -150,6 +150,11 @@ describe('territorial experience contract', () => {
     expect(documentSource).not.toMatch(/preboot|territorial-experience/i)
   })
 
+  it('does not fetch the hidden detail while the landing is the active layer', () => {
+    expect(files.detail).toContain('if (!active) return')
+    expect(files.detail).toContain('[active, scope, ano, mes, requestKey, retryKey]')
+  })
+
   it('keeps the legacy page loader and gates the territorial route on its own loader', () => {
     const territorialRoute = files.app.slice(
       files.app.indexOf('path="territorial"'),

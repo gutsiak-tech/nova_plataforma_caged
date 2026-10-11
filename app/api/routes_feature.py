@@ -14,6 +14,12 @@ from app.services.feature_gold_service import (
     get_uf_feature,
 )
 from app.services.gold_service import CompetenciaNotFoundError
+from app.services.territorial_response_cache import territorial_response_cache
+from app.services.territorial_response_sources import (
+    feature_logical_key,
+    municipality_feature_sources,
+    uf_feature_sources,
+)
 from pipelines.gold.feature_contract import (
     FEATURE_RANKING_DEFAULT_LIMIT,
     FEATURE_RANKING_MAX_LIMIT,
@@ -77,12 +83,17 @@ def feature_uf(
         )
     month = _resolve_month(ano, mes)
     _ensure_competencia(month)
+    salary_movement = _parse_salary_movement(movimento)
     try:
-        return get_uf_feature(
-            sigla,
-            month,
-            movimento=_parse_salary_movement(movimento),
-            limit=limit,
+        return territorial_response_cache.serve(
+            feature_logical_key("uf", sigla, month.ano, month.mes, salary_movement, limit),
+            uf_feature_sources(month),
+            lambda: get_uf_feature(
+                sigla,
+                month,
+                movimento=salary_movement,
+                limit=limit,
+            ),
         )
     except (FeatureNotFoundError, FeatureAssetMissingError, FeatureDataError, FileNotFoundError) as exc:
         raise _feature_error(exc) from exc
@@ -106,12 +117,24 @@ def feature_municipality(
         )
     month = _resolve_month(ano, mes)
     _ensure_competencia(month)
+    salary_movement = _parse_salary_movement(movimento)
     try:
-        return get_municipality_feature(
-            code,
-            month,
-            movimento=_parse_salary_movement(movimento),
-            limit=limit,
+        return territorial_response_cache.serve(
+            feature_logical_key(
+                "municipality",
+                code,
+                month.ano,
+                month.mes,
+                salary_movement,
+                limit,
+            ),
+            municipality_feature_sources(month),
+            lambda: get_municipality_feature(
+                code,
+                month,
+                movimento=salary_movement,
+                limit=limit,
+            ),
         )
     except (FeatureNotFoundError, FeatureAssetMissingError, FeatureDataError, FileNotFoundError) as exc:
         raise _feature_error(exc) from exc
