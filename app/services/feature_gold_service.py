@@ -2,9 +2,9 @@
 
 A API pública identifica UF pela sigla e município pelo código IBGE de 7 dígitos.
 A tradução para `uf_norm` / `municipio_norm` fica nesta camada. Salário, setor,
-ocupação e perfis saem das Golds de feature. Os KPIs saem de `tabela_uf` e
-`tabela_municipio`. A série municipal continua nessas competências publicadas,
-mas lê só a linha do município: a tabela de movimento não traz código IBGE.
+ocupação e perfis saem das Golds de feature. O KPI da UF sai de `tabela_uf`.
+O KPI municipal e a série leem só a linha do município em `tabela_municipio`:
+a tabela de movimento não traz código IBGE.
 """
 
 from __future__ import annotations
@@ -435,7 +435,13 @@ def get_municipality_feature(
     uf_norm = str(identity_row["uf_norm"])
     municipio_norm = str(identity_row["municipio_norm"])
     uf_sigla = str(identity_row["uf_sigla"])
-    movement = _municipality_movement_row(month, uf_norm, municipio_norm)
+    movement = _municipality_series_row(
+        month,
+        str(identity_row["uf"]),
+        str(identity_row["municipio"]),
+        uf_norm,
+        municipio_norm,
+    )
     if movement is None:
         raise FeatureNotFoundError(
             "Município sem movimento na competência.",

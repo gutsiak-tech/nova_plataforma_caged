@@ -15,6 +15,7 @@ from app.services.feature_gold_service import (
     _municipality_movement_row,
     _timeseries_municipality,
     get_municipality_feature,
+    read_gold_table,
 )
 from app.services.gold_service import GoldMonthRef, list_valid_competencias
 
@@ -102,6 +103,33 @@ def test_series_keeps_published_temporal_order():
 
 
 @pytest.mark.skipif(not GOLD_READY.is_file(), reason="Gold municipal ainda não materializada")
+def test_absent_competence_does_not_invent_a_zero_kpi():
+    with pytest.raises(FeatureNotFoundError):
+        get_municipality_feature("4123600", GoldMonthRef(ano=2026, mes=4))
+
+
+@pytest.mark.skipif(not GOLD_READY.is_file(), reason="Gold municipal ainda não materializada")
+def test_municipal_kpi_reads_one_parquet_row(monkeypatch):
+    seen: list[tuple[str, str]] = []
+
+    def spy(month, base_name, scope):
+        seen.append((base_name, scope))
+        return read_gold_table(month, base_name, scope)
+
+    monkeypatch.setattr("app.services.feature_gold_service.read_gold_table", spy)
+    payload = get_municipality_feature(
+        "4106902",
+        GoldMonthRef(ano=2026, mes=6),
+        movimento="admissao",
+        limit=5,
+    )
+    assert payload["kpis"]["admissoes"] > 0
+    assert ("tabela_municipio", "br") not in seen
+    assert ("tabela_uf", "br") in seen
+    assert ("tabela_resumo", "br") in seen
+
+
+@pytest.mark.skipif(not GOLD_READY.is_file(), reason="Gold municipal ainda não materializada")
 def test_unknown_municipality_code_is_not_found():
     with pytest.raises(FeatureNotFoundError):
         get_municipality_feature("9999999", GoldMonthRef(ano=2026, mes=6))
@@ -109,7 +137,7 @@ def test_unknown_municipality_code_is_not_found():
 
 @pytest.mark.skipif(not GOLD_READY.is_file(), reason="Gold municipal ainda não materializada")
 def test_feature_payload_keeps_kpis_comparison_and_series():
-    for code in ("4106902", "4104204", "4113700", "4106001"):
+    for code in ("4106902", "4104204", "4113700", "4106001", "4123600"):
         row = _dimension_row(code)
         expected = _national_series(row)
         for mes in (1, 6):
