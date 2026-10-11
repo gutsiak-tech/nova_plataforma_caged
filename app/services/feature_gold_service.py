@@ -2,8 +2,9 @@
 
 A API pública identifica UF pela sigla e município pelo código IBGE de 7 dígitos.
 A tradução para `uf_norm` / `municipio_norm` fica nesta camada. Salário, setor,
-ocupação e perfis saem das Golds de feature. A série e os KPIs saem das Golds de
-movimento já publicadas (`tabela_uf` e `tabela_municipio`), sem cópia mensal nova.
+ocupação e perfis saem das Golds de feature. Os KPIs saem de `tabela_uf` e
+`tabela_municipio`. A série municipal continua nessas competências publicadas,
+mas lê só a linha do município: a tabela de movimento não traz código IBGE.
 """
 
 from __future__ import annotations
@@ -235,11 +236,52 @@ def _timeseries_uf(uf_norm: str) -> list[dict[str, Any]]:
     return series
 
 
-def _timeseries_municipality(uf_norm: str, municipio_norm: str) -> list[dict[str, Any]]:
+def _municipality_series_path(month: GoldMonthRef) -> Path:
+    return month.dir / "tabela_municipio.parquet"
+
+
+def _municipality_series_row(
+    month: GoldMonthRef,
+    uf: str,
+    municipio: str,
+    uf_norm: str,
+    municipio_norm: str,
+) -> pd.Series | None:
+    """Um ponto da série municipal.
+
+    `tabela_municipio` não tem código IBGE. O código da requisição já foi
+    resolvido em `dim_municipio`; `uf` e `municipio` são os textos canônicos
+    dessa linha e são a chave gravada na tabela de movimento. A leitura pede
+    só essa linha ao Parquet. Competência sem a linha continua ausente.
+    """
+    path = _municipality_series_path(month)
+    if not path.is_file():
+        return _municipality_movement_row(month, uf_norm, municipio_norm)
+    frame = pd.read_parquet(
+        path,
+        columns=["uf", "municipio", *MOVEMENT_METRIC_COLUMNS],
+        filters=[("uf", "==", uf), ("municipio", "==", municipio)],
+    )
+    if frame.empty:
+        return None
+    if len(frame) > 1:
+        raise FeatureDataError(
+            f"Mais de uma linha de movimento para município {municipio_norm}/{uf_norm}.",
+            {"matches": int(len(frame))},
+        )
+    return frame.iloc[0]
+
+
+def _timeseries_municipality(
+    uf: str,
+    municipio: str,
+    uf_norm: str,
+    municipio_norm: str,
+) -> list[dict[str, Any]]:
     series: list[dict[str, Any]] = []
     for month_info in list_valid_competencias():
         month = GoldMonthRef(ano=int(month_info["ano"]), mes=int(month_info["mes"]))
-        row = _municipality_movement_row(month, uf_norm, municipio_norm)
+        row = _municipality_series_row(month, uf, municipio, uf_norm, municipio_norm)
         if row is None:
             continue
         series.append({"ano": month.ano, "mes": month.mes, **_kpis(row)})
@@ -440,7 +482,12 @@ def get_municipality_feature(
             limit,
         ),
         "profiles": _profiles(month, "cod_municipio", code),
-        "timeseries": _timeseries_municipality(uf_norm, municipio_norm),
+        "timeseries": _timeseries_municipality(
+            str(identity_row["uf"]),
+            str(identity_row["municipio"]),
+            uf_norm,
+            municipio_norm,
+        ),
         "comparison": {
             "parents": [
                 _comparison_parent(
