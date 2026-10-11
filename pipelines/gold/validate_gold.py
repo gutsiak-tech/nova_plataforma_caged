@@ -80,6 +80,7 @@ class GoldOutputValidationResult:
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     generated_at: str = ""
+    published_at: str = ""
 
 
 def _relative_path(path: Path) -> str:
@@ -408,6 +409,8 @@ def build_gold_metadata(
         "totals_consistency_ok": gold_output.totals_consistency_ok,
         "suspected_legacy_files": gold_output.suspected_legacy_files,
     }
+    if gold_output.published_at:
+        payload["published_at"] = gold_output.published_at
     return payload
 
 
@@ -422,8 +425,13 @@ def write_gold_metadata(
     from pipelines.common.utils import save_json
 
     path = (output_dir or gold_mes_dir(ano, mes)) / GOLD_METADATA_FILE
+    payload = build_gold_metadata(silver_input, gold_output)
+    if "published_at" not in payload:
+        preserved = _existing_published_at(path)
+        if preserved:
+            payload["published_at"] = preserved
     try:
-        save_json(build_gold_metadata(silver_input, gold_output), path)
+        save_json(payload, path)
     except OSError as exc:
         raise GoldValidationError(
             f"Falha ao gravar metadata.json da Gold em {path}: {exc}"
@@ -470,6 +478,22 @@ def ensure_gold_output_valid(result: GoldOutputValidationResult) -> GoldOutputVa
     return result
 
 
+def _existing_published_at(path: Path) -> str | None:
+    """Conserva o carimbo de uma Gold já publicada ao regravar o metadata."""
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    published_at = payload.get("published_at")
+    if isinstance(published_at, str) and published_at:
+        return published_at
+    return None
+
+
 def validate_and_publish_gold(
     ano: int,
     mes: int,
@@ -478,7 +502,15 @@ def validate_and_publish_gold(
     staging_dir: Path,
     final_dir: Path,
 ) -> GoldOutputValidationResult:
-    """Valida o staging e somente então o publica como competência corrente."""
+    """Valida o staging e somente então o publica como competência corrente.
+
+    `generated_at` continua nascendo no início da validação. `published_at`
+    é gravado no metadata do staging imediatamente antes do rename que
+    promove a pasta. Os dois viajam dentro do snapshot.
+
+    `published_at` marca a publicação da Gold territorial/base. A Feature Gold
+    pode gravar arquivos nessa pasta depois, sem atualizar esse campo.
+    """
     gold_output = validate_gold_outputs(
         ano,
         mes,
@@ -494,6 +526,14 @@ def validate_and_publish_gold(
         output_dir=staging_dir,
     )
     ensure_gold_output_valid(gold_output)
+    gold_output.published_at = datetime.now(timezone.utc).isoformat()
+    write_gold_metadata(
+        ano,
+        mes,
+        silver_input,
+        gold_output,
+        output_dir=staging_dir,
+    )
     publish_gold_directory(staging_dir, final_dir)
     return gold_output
 
