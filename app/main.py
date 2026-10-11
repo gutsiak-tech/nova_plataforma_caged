@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,10 +14,27 @@ from app.api.routes_gold import router as gold_router
 from app.core.config import API_LOG_FILE, CORS_ORIGINS
 from app.core.logging import setup_logger
 from app.services.gold_readiness import build_readiness_report
+from app.services.territorial_warm import start as start_territorial_warm
+from app.services.territorial_warm import stop as stop_territorial_warm
+from app.services.territorial_warm import warm_enabled
 
 logger = setup_logger("api", API_LOG_FILE)
 
-app = FastAPI(title="Projeto CAGED API", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    logger.info(
+        "API iniciada | service=caged-dashboard-api | env=%s | version=%s",
+        os.getenv("APP_ENV", "local"),
+        os.getenv("APP_VERSION", "dev"),
+    )
+    if warm_enabled():
+        start_territorial_warm()
+    yield
+    stop_territorial_warm()
+
+
+app = FastAPI(title="Projeto CAGED API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,15 +58,6 @@ async def gold_api_error_handler(_request: Request, exc: GoldAPIError) -> JSONRe
         exc.details,
     )
     return JSONResponse(status_code=exc.status_code, content=exc.to_payload())
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    logger.info(
-        "API iniciada | service=caged-dashboard-api | env=%s | version=%s",
-        os.getenv("APP_ENV", "local"),
-        os.getenv("APP_VERSION", "dev"),
-    )
 
 
 @app.get("/health")
