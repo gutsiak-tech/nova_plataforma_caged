@@ -8,6 +8,12 @@ import {
   type FeatureTimeseriesPoint,
 } from '../../api/featureFocus'
 import type { Scope } from '../../api/types'
+import {
+  FEATURE_AGE_ORDER,
+  FEATURE_SCHOOLING_ORDER,
+  profileComparisonRows,
+  type ProfileValueRow,
+} from '../../lib/featureProfiles'
 import { formatCurrencyBRL, formatInt, formatSignedInt, shortCompetenciaLabel } from '../../lib/format'
 
 type PanelStatus =
@@ -214,11 +220,12 @@ export function TerritorialFeaturePanel({
 
       <section className="territorial-section border-t border-[#e4dfd4] pt-3">
         <ModuleTitle>Perfis</ModuleTitle>
-        <div className="mt-2.5 space-y-3">
+        <div className="mt-2.5 space-y-4">
           <ProfileBlock title="Sexo" rows={data.profiles.sexo.map((row) => ({ label: row.sexo, value: row.admissoes }))} />
           <ProfileBlock
             title="Faixa etária"
             rows={data.profiles.faixa_etaria.map((row) => ({ label: row.faixa_etaria, value: row.admissoes }))}
+            order={FEATURE_AGE_ORDER}
           />
           <ProfileBlock
             title="Escolaridade"
@@ -226,6 +233,7 @@ export function TerritorialFeaturePanel({
               label: row.graudeinstrucao,
               value: row.admissoes,
             }))}
+            order={FEATURE_SCHOOLING_ORDER}
           />
         </div>
       </section>
@@ -329,25 +337,33 @@ function RankSection({
 function ProfileBlock({
   title,
   rows,
+  order,
 }: {
   title: string
-  rows: Array<{ label: string; value: number | null }>
+  rows: ProfileValueRow[]
+  order?: readonly string[]
 }) {
-  const visible = rows.filter((row) => row.value != null).slice(0, 6)
-  const total = visible.reduce((sum, row) => sum + (row.value ?? 0), 0)
+  const visible = profileComparisonRows(rows, order)
   if (visible.length === 0) return null
   return (
     <div>
       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#727d91]">{title}</p>
       <ul className="mt-1.5 space-y-1.5">
         {visible.map((row) => (
-          <li key={row.label} className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-3">
-            <p className="min-w-0 truncate text-sm text-[#1a2130]" title={row.label}>
-              {row.label}
-            </p>
-            <p className="shrink-0 text-xs tabular-nums text-[#5d6678]">
-              {total > 0 ? formatShare((row.value ?? 0) / total) : '—'}
-            </p>
+          <li key={row.label}>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3">
+              <p className="line-clamp-2 min-w-0 break-words text-sm leading-5 text-[#1a2130]" title={row.label}>
+                {row.label}
+              </p>
+              <p className="shrink-0 whitespace-nowrap text-xs tabular-nums text-[#5d6678]">
+                {row.share == null ? '—' : formatShare(row.share)}
+              </p>
+            </div>
+            {row.width != null ? (
+              <div className="mt-1 h-[3px] overflow-hidden rounded-[1px] bg-[#e4dfd4]" aria-hidden="true">
+                <div className="h-full bg-[#1a2130]" style={{ width: row.width }} />
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>
