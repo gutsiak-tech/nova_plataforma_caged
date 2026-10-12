@@ -18,7 +18,8 @@ from app.core.config import (
 )
 from app.core.logging import setup_logger
 from app.services.gold_catalog_service import CURRENT_PIPELINE_TABLES
-from pipelines.gold.feature_contract import FEATURE_GOLD_TABLE_NAMES
+from pipelines.gold.feature_contract import FEATURE_GOLD_TABLE_NAMES, is_feature_gold_table
+from pipelines.gold.feature_publication import readable_feature_table_dir
 from pipelines.gold.publication import (
     canonical_gold_competencia_dir,
     is_valid_gold_competencia_dir,
@@ -154,8 +155,13 @@ def resolve_gold_table_paths(
 ) -> GoldTablePaths:
     stem = _table_stem(base_name, scope)
     month_dir = month.dir.resolve()
-    csv_path = (month.dir / f"{stem}.csv").resolve()
-    parquet_path = (month.dir / f"{stem}.parquet").resolve()
+    table_dir = (
+        readable_feature_table_dir(month.dir)
+        if is_feature_gold_table(stem)
+        else month.dir
+    )
+    csv_path = (table_dir / f"{stem}.csv").resolve()
+    parquet_path = (table_dir / f"{stem}.parquet").resolve()
 
     try:
         csv_path.relative_to(month_dir)

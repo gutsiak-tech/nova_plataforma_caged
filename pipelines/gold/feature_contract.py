@@ -9,6 +9,11 @@ na granularidade de UF e de município, no mesmo modelo wide já usado pelo proj
 alta. O CSV não é o caminho de leitura da API e duplicaria dezenas de megabytes
 por competência sem ganho analítico. A Gold continua com todas as combinações
 observadas; não há corte Top N nesta camada.
+
+Os doze Parquets são a condição mínima para servir `/feature`. O relatório
+`feature_gold_report.json` viaja no snapshot publicado e não é lido pela API.
+Competências antigas ainda têm esses Parquets no root de `mes=NN`; esse layout
+flat é legado e só entra quando a competência ainda não tem `feature/`.
 """
 
 from __future__ import annotations
@@ -66,7 +71,16 @@ FEATURE_GOLD_TABLE_NAMES: tuple[str, ...] = (
     *FEATURE_PARQUET_ONLY_TABLES,
 )
 
+# Serving de /feature exige estes Parquets. O CSV é cópia analítica e não
+# entra nessa condição. O relatório viaja no snapshot, mas a API não o lê.
+FEATURE_SERVING_PARQUET_NAMES: tuple[str, ...] = FEATURE_GOLD_TABLE_NAMES
+
 FEATURE_REPORT_FILE = "feature_gold_report.json"
+
+
+def is_feature_gold_table(table_name: str) -> bool:
+    """Tabela do contrato Feature. As tabelas territoriais ficam de fora."""
+    return table_name in FEATURE_GOLD_TABLE_NAMES
 
 # O /overview do território atual pede 12 linhas para setor e ocupação.
 FEATURE_RANKING_DEFAULT_LIMIT = 12

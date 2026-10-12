@@ -20,6 +20,7 @@ from pipelines.gold.publication import (
     is_valid_gold_competencia_dir,
     previous_gold_competencia_dir,
 )
+from pipelines.gold.feature_publication import resolve_feature_gold_dir
 
 _PROFILE_TABLES = (
     "tabela_perfil_sexo",
@@ -72,8 +73,8 @@ def _table_path(month_dir: Path, base_name: str, scope: Scope) -> Path:
     return month_dir / f"{stem}.csv"
 
 
-def _feature_slice_path(month_dir: Path, table_name: str) -> Path:
-    return month_dir / f"{table_name}.parquet"
+def _feature_slice_path(feature_directory: Path, table_name: str) -> Path:
+    return feature_directory / f"{table_name}.parquet"
 
 
 def _published_month_dirs() -> list[Path]:
@@ -137,26 +138,44 @@ def overview_sources(scope: Scope, month: GoldMonthRef) -> list[Path]:
     return [_table_path(month_dir, name, table_scope) for name, table_scope in tables]
 
 
-def uf_feature_sources(month: GoldMonthRef) -> list[Path]:
-    month_dir = month.dir
+def uf_feature_sources(
+    month: GoldMonthRef,
+    *,
+    territorial_dir: Path | None = None,
+    feature_dir: Path | None = None,
+) -> list[Path]:
+    month_dir = territorial_dir if territorial_dir is not None else month.dir
+    resolved_feature = (
+        feature_dir if feature_dir is not None else resolve_feature_gold_dir(month_dir)
+    )
+    slice_root = resolved_feature if resolved_feature is not None else month_dir / "feature"
     paths = [
         FEATURE_GEO_DIR / "dim_uf.parquet",
         _table_path(month_dir, "tabela_resumo", "br"),
     ]
-    paths.extend(_feature_slice_path(month_dir, table) for table in _UF_FEATURE_SLICES)
+    paths.extend(_feature_slice_path(slice_root, table) for table in _UF_FEATURE_SLICES)
     paths.extend(_table_path(directory, "tabela_uf", "br") for directory in _published_month_dirs())
     return paths
 
 
-def municipality_feature_sources(month: GoldMonthRef) -> list[Path]:
-    month_dir = month.dir
+def municipality_feature_sources(
+    month: GoldMonthRef,
+    *,
+    territorial_dir: Path | None = None,
+    feature_dir: Path | None = None,
+) -> list[Path]:
+    month_dir = territorial_dir if territorial_dir is not None else month.dir
+    resolved_feature = (
+        feature_dir if feature_dir is not None else resolve_feature_gold_dir(month_dir)
+    )
+    slice_root = resolved_feature if resolved_feature is not None else month_dir / "feature"
     paths = [
         FEATURE_GEO_DIR / "dim_municipio.parquet",
         _table_path(month_dir, "tabela_resumo", "br"),
         _table_path(month_dir, "tabela_uf", "br"),
     ]
     paths.extend(
-        _feature_slice_path(month_dir, table) for table in _MUNICIPALITY_FEATURE_SLICES
+        _feature_slice_path(slice_root, table) for table in _MUNICIPALITY_FEATURE_SLICES
     )
     paths.extend(
         _table_path(directory, "tabela_municipio", "br")

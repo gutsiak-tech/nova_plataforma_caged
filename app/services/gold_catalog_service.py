@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,7 @@ import pyarrow.parquet as pq
 
 from app.core.config import GOLD_CAGED_DIR, PROJECT_ROOT
 from pipelines.gold.feature_contract import FEATURE_GOLD_TABLE_NAMES
+from pipelines.gold.feature_publication import readable_feature_table_dir
 from pipelines.gold.publication import is_valid_gold_competencia_dir
 
 CATALOG_DIR = PROJECT_ROOT / "data-lake" / "catalog"
@@ -312,17 +314,40 @@ def inspect_gold_table(
     }
 
 
+def _use_selected_feature_snapshot(
+    month_dir: Path,
+    csv_map: dict[str, Path],
+    parquet_map: dict[str, Path],
+) -> None:
+    """Troca as tabelas Feature do root pelo snapshot que a API seleciona."""
+    selected = readable_feature_table_dir(month_dir)
+    if os.path.normcase(os.path.abspath(selected)) == os.path.normcase(os.path.abspath(month_dir)):
+        return
+    for name in FEATURE_GOLD_TABLE_NAMES:
+        csv_map.pop(name, None)
+        parquet_map.pop(name, None)
+        csv_path = selected / f"{name}.csv"
+        parquet_path = selected / f"{name}.parquet"
+        if csv_path.is_file():
+            csv_map[name] = csv_path
+        if parquet_path.is_file():
+            parquet_map[name] = parquet_path
+
+
 def _scan_partition_files(month_dir: Path) -> dict[str, Any]:
     csv_files = sorted(month_dir.glob("*.csv"))
     parquet_files = sorted(month_dir.glob("*.parquet"))
     excel_files = sorted(month_dir.glob("*.xlsx"))
 
-    csv_names = {p.stem for p in csv_files}
-    parquet_names = {p.stem for p in parquet_files}
-    all_table_names = sorted(csv_names | parquet_names)
+    csv_map = {path.stem: path for path in csv_files}
+    parquet_map = {path.stem: path for path in parquet_files}
+    _use_selected_feature_snapshot(month_dir, csv_map, parquet_map)
+    csv_files = sorted(csv_map.values())
+    parquet_files = sorted(parquet_map.values())
 
-    csv_map = {p.stem: p for p in csv_files}
-    parquet_map = {p.stem: p for p in parquet_files}
+    csv_names = set(csv_map)
+    parquet_names = set(parquet_map)
+    all_table_names = sorted(csv_names | parquet_names)
 
     csv_without_parquet = sorted(csv_names - parquet_names)
     parquet_without_csv = sorted(parquet_names - csv_names)

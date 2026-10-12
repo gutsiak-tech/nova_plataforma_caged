@@ -10,6 +10,8 @@ a tabela de movimento não traz código IBGE.
 from __future__ import annotations
 
 from functools import lru_cache
+from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -28,6 +30,12 @@ from pipelines.gold.aggregate_indicators import (
 from pipelines.gold.feature_contract import (
     FEATURE_RANKING_DEFAULT_LIMIT,
     MOVEMENT_METRIC_COLUMNS,
+)
+from pipelines.gold.feature_publication import (
+    feature_parquet_signature,
+    file_stat_signature,
+    preferred_table_signature,
+    resolve_feature_gold_dir,
 )
 
 FeatureLevel = Literal["uf", "municipality"]
@@ -162,14 +170,42 @@ def _municipality_movement_row(
     return _movement_hit(table, mask, label=f"município {municipio_norm}/{uf_norm}")
 
 
-def _read_feature_slice(month: GoldMonthRef, table_name: str, column: str, value: str) -> pd.DataFrame:
-    path = month.dir / f"{table_name}.parquet"
+class SnapshotChanged(Exception):
+    """O snapshot lido não é o fingerprint com que este cálculo começou.
+
+    Sinal interno. A rota resolve de novo e entra no cache com a chave nova.
+    Não é resposta de API.
+    """
+
+
+class _SnapshotMoved(Exception):
+    """O diretório lido trocou de geração no meio do request."""
+
+
+@dataclass(frozen=True)
+class _PinnedMonth:
+    """Competência cuja pasta territorial já foi escolhida para este request."""
+
+    ano: int
+    mes: int
+    territorial_dir: Path
+
+    @property
+    def dir(self) -> Path:
+        return self.territorial_dir
+
+
+def _read_feature_slice(
+    feature_directory: Path,
+    table_name: str,
+    column: str,
+    value: str,
+) -> pd.DataFrame:
+    path = feature_directory / f"{table_name}.parquet"
     if not path.is_file():
         raise FeatureAssetMissingError(
             "Tabela Gold de feature não encontrada.",
             {
-                "ano": month.ano,
-                "mes": month.mes,
                 "table": table_name,
                 "expected_path": path.as_posix(),
             },
@@ -225,10 +261,18 @@ def _comparison_parent(level: str, identifier: str, name: str, child: dict[str, 
     }
 
 
-def _timeseries_uf(uf_norm: str) -> list[dict[str, Any]]:
+def _timeseries_uf(
+    uf_norm: str,
+    current: _PinnedMonth | None = None,
+) -> list[dict[str, Any]]:
     series: list[dict[str, Any]] = []
     for month_info in list_valid_competencias():
-        month = GoldMonthRef(ano=int(month_info["ano"]), mes=int(month_info["mes"]))
+        ano = int(month_info["ano"])
+        mes = int(month_info["mes"])
+        if current is not None and ano == current.ano and mes == current.mes:
+            month: GoldMonthRef | _PinnedMonth = current
+        else:
+            month = GoldMonthRef(ano=ano, mes=mes)
         row = _uf_movement_row(month, uf_norm)
         if row is None:
             continue
@@ -277,10 +321,16 @@ def _timeseries_municipality(
     municipio: str,
     uf_norm: str,
     municipio_norm: str,
+    current: _PinnedMonth | None = None,
 ) -> list[dict[str, Any]]:
     series: list[dict[str, Any]] = []
     for month_info in list_valid_competencias():
-        month = GoldMonthRef(ano=int(month_info["ano"]), mes=int(month_info["mes"]))
+        ano = int(month_info["ano"])
+        mes = int(month_info["mes"])
+        if current is not None and ano == current.ano and mes == current.mes:
+            month: GoldMonthRef | _PinnedMonth = current
+        else:
+            month = GoldMonthRef(ano=ano, mes=mes)
         row = _municipality_series_row(month, uf, municipio, uf_norm, municipio_norm)
         if row is None:
             continue
@@ -306,7 +356,11 @@ def _rankings(frame: pd.DataFrame, dimension: str, limit: int) -> dict[str, Any]
     }
 
 
-def _profiles(month: GoldMonthRef, level_column: str, level_value: str) -> dict[str, list[dict[str, Any]]]:
+def _profiles(
+    feature_directory: Path,
+    level_column: str,
+    level_value: str,
+) -> dict[str, list[dict[str, Any]]]:
     specs = {
         "sexo": ("perfil_sexo", "sexo"),
         "faixa_etaria": ("perfil_faixa_etaria", "faixa_etaria"),
@@ -315,19 +369,19 @@ def _profiles(month: GoldMonthRef, level_column: str, level_value: str) -> dict[
     prefix = "tabela_uf" if level_column == "uf_sigla" else "tabela_municipio"
     payload: dict[str, list[dict[str, Any]]] = {}
     for key, (suffix, column) in specs.items():
-        frame = _read_feature_slice(month, f"{prefix}_{suffix}", level_column, level_value)
+        frame = _read_feature_slice(feature_directory, f"{prefix}_{suffix}", level_column, level_value)
         payload[key] = _records(frame, [column, *MOVEMENT_METRIC_COLUMNS])
     return payload
 
 
 def _salary(
-    month: GoldMonthRef,
+    feature_directory: Path,
     table_name: str,
     column: str,
     value: str,
     movimento: SalaryMovement,
 ) -> dict[str, Any] | None:
-    frame = _read_feature_slice(month, table_name, column, value)
+    frame = _read_feature_slice(feature_directory, table_name, column, value)
     if frame.empty or "movimento" not in frame.columns:
         return None
     selected = frame.loc[frame["movimento"].astype("string").str.lower().eq(movimento)]
@@ -353,12 +407,115 @@ def _text(value: object) -> str | None:
     return str(value)
 
 
+def _bind_feature_request(
+    month: GoldMonthRef,
+    territorial_dir: Path | None,
+    feature_directory: Path | None,
+) -> tuple[_PinnedMonth, Path]:
+    pinned_dir = territorial_dir if territorial_dir is not None else month.dir
+    pinned = _PinnedMonth(ano=month.ano, mes=month.mes, territorial_dir=pinned_dir)
+    resolved = (
+        feature_directory
+        if feature_directory is not None
+        else resolve_feature_gold_dir(pinned_dir)
+    )
+    if resolved is None:
+        raise FeatureAssetMissingError(
+            "Tabela Gold de feature não encontrada.",
+            {
+                "ano": month.ano,
+                "mes": month.mes,
+                "expected_path": str(pinned_dir / "feature"),
+            },
+        )
+    return pinned, resolved
+
+
+def _stable_feature_attempt(
+    pinned: _PinnedMonth,
+    feature_directory: Path,
+    territorial_stems: tuple[str, ...],
+    dimension_name: str,
+    build,
+):
+    feature_signature = feature_parquet_signature(feature_directory)
+    territorial_signature = preferred_table_signature(pinned.territorial_dir, territorial_stems)
+    dimension_path = FEATURE_GEO_DIR / dimension_name
+    dimension_signature = file_stat_signature(dimension_path)
+    payload = build()
+    if (
+        feature_parquet_signature(feature_directory) != feature_signature
+        or preferred_table_signature(pinned.territorial_dir, territorial_stems)
+        != territorial_signature
+        or file_stat_signature(dimension_path) != dimension_signature
+    ):
+        raise _SnapshotMoved()
+    return payload
+
+
+def _same_directory(left: Path, right: Path) -> bool:
+    return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(right))
+
+
+def _with_stable_snapshot(
+    pinned: _PinnedMonth,
+    feature_directory: Path,
+    territorial_stems: tuple[str, ...],
+    dimension_name: str,
+    build,
+):
+    """Uma tentativa. Troca de snapshot invalida o cálculo em vez de devolver a geração nova."""
+    try:
+        return _stable_feature_attempt(
+            pinned,
+            feature_directory,
+            territorial_stems,
+            dimension_name,
+            lambda directory=feature_directory: build(directory),
+        )
+    except FeatureAssetMissingError as exc:
+        rebound = resolve_feature_gold_dir(pinned.territorial_dir)
+        if rebound is None or _same_directory(rebound, feature_directory):
+            raise
+        raise SnapshotChanged() from exc
+    except _SnapshotMoved as exc:
+        raise SnapshotChanged() from exc
+    except OSError as exc:
+        raise SnapshotChanged() from exc
+
+
 def get_uf_feature(
     uf_sigla: str,
     month: GoldMonthRef,
     *,
     movimento: SalaryMovement = "admissao",
     limit: int = FEATURE_RANKING_DEFAULT_LIMIT,
+    territorial_dir: Path | None = None,
+    feature_dir: Path | None = None,
+) -> dict[str, Any]:
+    pinned, resolved_feature = _bind_feature_request(month, territorial_dir, feature_dir)
+    return _with_stable_snapshot(
+        pinned,
+        resolved_feature,
+        ("tabela_resumo", "tabela_uf"),
+        "dim_uf.parquet",
+        lambda directory: _assemble_uf_feature(
+            uf_sigla,
+            pinned,
+            directory,
+            movimento=movimento,
+            limit=limit,
+        ),
+    )
+
+
+def _assemble_uf_feature(
+    uf_sigla: str,
+    month: _PinnedMonth,
+    feature_directory: Path,
+    *,
+    movimento: SalaryMovement,
+    limit: int,
 ) -> dict[str, Any]:
     sigla = uf_sigla.strip().upper()
     dimension = _read_dimension("dim_uf.parquet")
@@ -393,19 +550,19 @@ def get_uf_feature(
         },
         "period": {"ano": month.ano, "mes": month.mes},
         "kpis": child,
-        "salary": _salary(month, "tabela_uf_salario", "uf_sigla", sigla, movimento),
+        "salary": _salary(feature_directory, "tabela_uf_salario", "uf_sigla", sigla, movimento),
         "sectors": _rankings(
-            _read_feature_slice(month, "tabela_uf_setor", "uf_sigla", sigla),
+            _read_feature_slice(feature_directory, "tabela_uf_setor", "uf_sigla", sigla),
             "secao",
             limit,
         ),
         "occupations": _rankings(
-            _read_feature_slice(month, "tabela_uf_ocupacao", "uf_sigla", sigla),
+            _read_feature_slice(feature_directory, "tabela_uf_ocupacao", "uf_sigla", sigla),
             "cbo2002ocupacao",
             limit,
         ),
-        "profiles": _profiles(month, "uf_sigla", sigla),
-        "timeseries": _timeseries_uf(uf_norm),
+        "profiles": _profiles(feature_directory, "uf_sigla", sigla),
+        "timeseries": _timeseries_uf(uf_norm, month),
         "comparison": {
             "parents": [
                 _comparison_parent("brasil", "BR", "Brasil", child, brasil),
@@ -420,6 +577,32 @@ def get_municipality_feature(
     *,
     movimento: SalaryMovement = "admissao",
     limit: int = FEATURE_RANKING_DEFAULT_LIMIT,
+    territorial_dir: Path | None = None,
+    feature_dir: Path | None = None,
+) -> dict[str, Any]:
+    pinned, resolved_feature = _bind_feature_request(month, territorial_dir, feature_dir)
+    return _with_stable_snapshot(
+        pinned,
+        resolved_feature,
+        ("tabela_resumo", "tabela_uf", "tabela_municipio"),
+        "dim_municipio.parquet",
+        lambda directory: _assemble_municipality_feature(
+            cod_municipio,
+            pinned,
+            directory,
+            movimento=movimento,
+            limit=limit,
+        ),
+    )
+
+
+def _assemble_municipality_feature(
+    cod_municipio: str,
+    month: _PinnedMonth,
+    feature_directory: Path,
+    *,
+    movimento: SalaryMovement,
+    limit: int,
 ) -> dict[str, Any]:
     code = cod_municipio.strip()
     dimension = _read_dimension("dim_municipio.parquet")
@@ -476,23 +659,35 @@ def get_municipality_feature(
         },
         "period": {"ano": month.ano, "mes": month.mes},
         "kpis": child,
-        "salary": _salary(month, "tabela_municipio_salario", "cod_municipio", code, movimento),
+        "salary": _salary(
+            feature_directory,
+            "tabela_municipio_salario",
+            "cod_municipio",
+            code,
+            movimento,
+        ),
         "sectors": _rankings(
-            _read_feature_slice(month, "tabela_municipio_setor", "cod_municipio", code),
+            _read_feature_slice(feature_directory, "tabela_municipio_setor", "cod_municipio", code),
             "secao",
             limit,
         ),
         "occupations": _rankings(
-            _read_feature_slice(month, "tabela_municipio_ocupacao", "cod_municipio", code),
+            _read_feature_slice(
+                feature_directory,
+                "tabela_municipio_ocupacao",
+                "cod_municipio",
+                code,
+            ),
             "cbo2002ocupacao",
             limit,
         ),
-        "profiles": _profiles(month, "cod_municipio", code),
+        "profiles": _profiles(feature_directory, "cod_municipio", code),
         "timeseries": _timeseries_municipality(
             str(identity_row["uf"]),
             str(identity_row["municipio"]),
             uf_norm,
             municipio_norm,
+            month,
         ),
         "comparison": {
             "parents": [

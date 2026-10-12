@@ -13,6 +13,8 @@ Política:
 - INVALIDATION: o fingerprint é o conjunto `path|mtime_ns|size` das Golds
   dependentes. Arquivo substituído muda o fingerprint, a entrada antiga é
   descartada e o próximo pedido é MISS. Não há TTL.
+- TROCA DE SNAPSHOT: se o cálculo sinaliza que as fontes mudaram, a exceção
+  sai sem gravar payload. A chave antiga não recebe a geração nova.
 
 Duas requisições simultâneas da mesma chave compartilham um único cálculo.
 Chaves diferentes seguem em paralelo. Falha não é armazenada.
@@ -223,6 +225,7 @@ class TerritorialResponseCache:
             produced = compute()
             stored = deepcopy(produced)
         except BaseException as exc:
+            # Falha e troca de snapshot não gravam payload nesta chave.
             with self._lock:
                 self._inflight.pop(storage_key, None)
                 flight.error = exc

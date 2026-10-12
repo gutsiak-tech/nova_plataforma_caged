@@ -20,7 +20,8 @@ from pipelines.gold.aggregate_indicators import (
     normalizar_texto_upper_sem_acento,
     prepare_territorial_frame,
 )
-from pipelines.gold.feature_contract import FEATURE_PARQUET_ONLY_TABLES
+from pipelines.gold.feature_contract import FEATURE_PARQUET_ONLY_TABLES, FEATURE_REPORT_FILE
+from pipelines.gold.gold_contract import MIN_REQUIRED_GOLD_TABLES
 from pipelines.gold.geo_dimension import (
     MATCH_AMBIGUOUS,
     MATCH_UNMATCHED,
@@ -171,10 +172,18 @@ def test_feature_metrics_reuse_movement_and_salary_methodology():
 def test_materialize_keeps_existing_gold_files(tmp_path: Path):
     output_dir = tmp_path / "gold" / "ano=2026" / "mes=02"
     output_dir.mkdir(parents=True)
+    (output_dir / "metadata.json").write_text(
+        json.dumps({"validation_status": "ok"}),
+        encoding="utf-8",
+    )
+    for name in MIN_REQUIRED_GOLD_TABLES:
+        (output_dir / f"{name}.csv").write_text("col\n1\n", encoding="utf-8")
     existing = output_dir / "tabela_uf.csv"
     payload = "uf,admissoes,desligamentos,saldo\nSão Paulo,10,4,6\n"
     existing.write_text(payload, encoding="utf-8")
     before = existing.stat().st_mtime_ns
+    legacy_flat = output_dir / "tabela_uf_setor.parquet"
+    legacy_flat.write_bytes(b"legado")
 
     materialize_feature_gold(
         _frame(),
@@ -185,12 +194,18 @@ def test_materialize_keeps_existing_gold_files(tmp_path: Path):
         geo_dir=tmp_path / "geo",
     )
 
+    feature_dir = output_dir / "feature"
     assert existing.read_text(encoding="utf-8") == payload
     assert existing.stat().st_mtime_ns == before
-    assert (output_dir / "tabela_uf_setor.csv").is_file()
-    assert (output_dir / "tabela_uf_setor.parquet").is_file()
-    assert (output_dir / "tabela_municipio_ocupacao.parquet").is_file()
+    assert legacy_flat.read_bytes() == b"legado"
+    assert (feature_dir / "tabela_uf_setor.csv").is_file()
+    assert (feature_dir / "tabela_uf_setor.parquet").is_file()
+    assert (feature_dir / "tabela_municipio_ocupacao.parquet").is_file()
+    assert not (feature_dir / "tabela_municipio_ocupacao.csv").exists()
     assert not (output_dir / "tabela_municipio_ocupacao.csv").exists()
+    report = json.loads((feature_dir / FEATURE_REPORT_FILE).read_text(encoding="utf-8"))
+    assert report["feature_generated_at"]
+    assert not list(output_dir.parent.glob(".mes=02.feature-staging-*"))
     assert FEATURE_PARQUET_ONLY_TABLES == ("tabela_municipio_ocupacao",)
 
 

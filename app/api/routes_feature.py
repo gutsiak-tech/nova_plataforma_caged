@@ -10,9 +10,11 @@ from app.services.feature_gold_service import (
     FeatureAssetMissingError,
     FeatureDataError,
     FeatureNotFoundError,
+    SnapshotChanged,
     get_municipality_feature,
     get_uf_feature,
 )
+from pipelines.gold.feature_publication import resolve_feature_gold_dir
 from app.services.gold_service import CompetenciaNotFoundError
 from app.services.territorial_response_cache import territorial_response_cache
 from app.services.territorial_response_sources import (
@@ -65,6 +67,34 @@ def _feature_error(exc: Exception) -> GoldAPIError:
     raise exc
 
 
+def serve_feature_response(logical_key: str, month, sources_for, read):
+    """Entra no cache com o fingerprint do snapshot resolvido agora.
+
+    Se esse snapshot muda durante o cálculo, a tentativa é descartada. Uma
+    segunda passagem resolve de novo, calcula outro fingerprint e entra com
+    a chave nova. A terceira troca vira erro de dados, sem loop.
+    """
+    changed: SnapshotChanged | None = None
+    for _attempt in range(2):
+        territorial_dir = month.dir
+        feature_directory = resolve_feature_gold_dir(territorial_dir)
+        try:
+            return territorial_response_cache.serve(
+                logical_key,
+                sources_for(territorial_dir, feature_directory),
+                lambda territorial_dir=territorial_dir, feature_directory=feature_directory: read(
+                    territorial_dir,
+                    feature_directory,
+                ),
+            )
+        except SnapshotChanged as exc:
+            changed = exc
+    raise FeatureDataError(
+        "Snapshot da Feature mudou durante a leitura.",
+        {"ano": month.ano, "mes": month.mes},
+    ) from changed
+
+
 @router.get("/feature/uf/{uf_sigla}")
 def feature_uf(
     uf_sigla: str,
@@ -85,14 +115,21 @@ def feature_uf(
     _ensure_competencia(month)
     salary_movement = _parse_salary_movement(movimento)
     try:
-        return territorial_response_cache.serve(
+        return serve_feature_response(
             feature_logical_key("uf", sigla, month.ano, month.mes, salary_movement, limit),
-            uf_feature_sources(month),
-            lambda: get_uf_feature(
+            month,
+            lambda territorial_dir, feature_directory: uf_feature_sources(
+                month,
+                territorial_dir=territorial_dir,
+                feature_dir=feature_directory,
+            ),
+            lambda territorial_dir, feature_directory: get_uf_feature(
                 sigla,
                 month,
                 movimento=salary_movement,
                 limit=limit,
+                territorial_dir=territorial_dir,
+                feature_dir=feature_directory,
             ),
         )
     except (FeatureNotFoundError, FeatureAssetMissingError, FeatureDataError, FileNotFoundError) as exc:
@@ -119,7 +156,7 @@ def feature_municipality(
     _ensure_competencia(month)
     salary_movement = _parse_salary_movement(movimento)
     try:
-        return territorial_response_cache.serve(
+        return serve_feature_response(
             feature_logical_key(
                 "municipality",
                 code,
@@ -128,12 +165,19 @@ def feature_municipality(
                 salary_movement,
                 limit,
             ),
-            municipality_feature_sources(month),
-            lambda: get_municipality_feature(
+            month,
+            lambda territorial_dir, feature_directory: municipality_feature_sources(
+                month,
+                territorial_dir=territorial_dir,
+                feature_dir=feature_directory,
+            ),
+            lambda territorial_dir, feature_directory: get_municipality_feature(
                 code,
                 month,
                 movimento=salary_movement,
                 limit=limit,
+                territorial_dir=territorial_dir,
+                feature_dir=feature_directory,
             ),
         )
     except (FeatureNotFoundError, FeatureAssetMissingError, FeatureDataError, FileNotFoundError) as exc:
