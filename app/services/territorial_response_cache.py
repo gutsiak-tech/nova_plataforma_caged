@@ -27,7 +27,6 @@ from collections.abc import Callable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
-import logging
 import os
 from pathlib import Path
 import threading
@@ -262,7 +261,7 @@ class TerritorialResponseCache:
         for key in stale:
             del self._entries[key]
         self._invalidations += len(stale)
-        logger.info(
+        logger.debug(
             "response_cache_invalidation | logical=%s | dropped=%s | response_cache_entries=%s | response_cache_inflight=%s",
             logical_key,
             len(stale),
@@ -274,7 +273,7 @@ class TerritorialResponseCache:
         while len(self._entries) > self.max_entries:
             evicted, _value = self._entries.popitem(last=False)
             self._evictions += 1
-            logger.info(
+            logger.debug(
                 "response_cache_eviction | logical=%s | response_cache_entries=%s | response_cache_inflight=%s",
                 evicted.rsplit("|", 1)[0],
                 len(self._entries),
@@ -289,10 +288,7 @@ class TerritorialResponseCache:
         *,
         coalesced: bool,
     ) -> None:
-        production = os.getenv("APP_ENV", "local") == "production"
-        level = logging.DEBUG if production else logging.INFO
-        logger.log(
-            level,
+        logger.debug(
             "response_cache_%s | logical=%s | lookup_ms=%.3f | compute_ms=%.3f | coalesced=%s | response_cache_entries=%s | response_cache_inflight=%s",
             kind,
             logical_key,

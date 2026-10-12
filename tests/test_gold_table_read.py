@@ -288,14 +288,17 @@ def test_read_gold_table_logs_parquet_source(monkeypatch, tmp_path, caplog):
     pd.DataFrame({"saldo": [1]}).to_csv(month_dir / "tabela_setor.csv", index=False)
     pd.DataFrame({"saldo": [2]}).to_parquet(month_dir / "tabela_setor.parquet", index=False)
 
-    with caplog.at_level(logging.INFO, logger="api.gold"):
+    with caplog.at_level(logging.DEBUG, logger="api.gold"):
         read_gold_table(month, "tabela_setor", "br")
 
-    assert any(
-        "Gold table loaded | source=parquet | table=tabela_setor | scope=br | competencia=2026-02"
-        in record.message
+    matches = [
+        record
         for record in caplog.records
-    )
+        if "Gold table loaded | source=parquet | table=tabela_setor | scope=br | competencia=2026-02"
+        in record.message
+    ]
+    assert len(matches) == 1
+    assert matches[0].levelno == logging.DEBUG
 
 
 def test_read_gold_table_logs_csv_source_when_parquet_missing(monkeypatch, tmp_path, caplog):
@@ -306,14 +309,17 @@ def test_read_gold_table_logs_csv_source_when_parquet_missing(monkeypatch, tmp_p
 
     pd.DataFrame({"saldo": [42]}).to_csv(month_dir / "tabela_setor.csv", index=False)
 
-    with caplog.at_level(logging.INFO, logger="api.gold"):
+    with caplog.at_level(logging.DEBUG, logger="api.gold"):
         read_gold_table(month, "tabela_setor", "br")
 
-    assert any(
-        "Gold table loaded | source=csv | table=tabela_setor | scope=br | competencia=2026-02"
-        in record.message
+    matches = [
+        record
         for record in caplog.records
-    )
+        if "Gold table loaded | source=csv | table=tabela_setor | scope=br | competencia=2026-02"
+        in record.message
+    ]
+    assert len(matches) == 1
+    assert matches[0].levelno == logging.DEBUG
 
 
 def test_table_not_found_returns_gold_table_not_found(monkeypatch, tmp_path):

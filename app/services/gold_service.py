@@ -259,7 +259,7 @@ def _log_gold_table_loaded(
     competencia: str,
     path: Path,
 ) -> None:
-    logger.info(
+    logger.debug(
         "Gold table loaded | source=%s | table=%s | scope=%s | competencia=%s | path=%s",
         source,
         base_name,
