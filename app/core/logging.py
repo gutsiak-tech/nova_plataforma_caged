@@ -19,4 +19,5 @@ def setup_logger(name: str, log_file: Path, level=logging.INFO):
         logger.addHandler(file_handler)
         logger.addHandler(stream_handler)
 
+    logger.propagate = False
     return logger
