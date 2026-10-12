@@ -1,22 +1,31 @@
 """Publicação atômica do snapshot Feature.
 
-A geração escreve num staging fora de `feature/`. O commit é o rename desse
-diretório para `feature/`. A Gold territorial não participa desse swap.
+O pipeline mensal grava `feature/` dentro do staging territorial. O único
+commit visível dessa competência é o rename do staging mensal.
 
-Em estado estável existem no máximo `feature/` e `feature.__previous__/`.
-`.feature.retiring` e `.mes=NN.feature-staging-*` só existem durante a
-transação e não são snapshots servidos.
+Este módulo continua responsável pela republicação avulsa: a geração escreve
+num staging irmão e o commit é o rename para `feature/`. A Gold territorial
+não participa desse swap.
+
+Em estado estável, na republicação avulsa, existem no máximo `feature/` e
+`feature.__previous__/`. `.feature.retiring` e `.mes=NN.feature-staging-*`
+só existem durante essa transação e não são snapshots servidos.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import time
 import uuid
 from pathlib import Path
 
-from pipelines.gold.feature_contract import FEATURE_REPORT_FILE, FEATURE_SERVING_PARQUET_NAMES
+from pipelines.gold.feature_contract import (
+    FEATURE_CSV_TABLES,
+    FEATURE_REPORT_FILE,
+    FEATURE_SERVING_PARQUET_NAMES,
+)
 from pipelines.gold.publication import is_valid_gold_competencia_dir
 
 FEATURE_DIR_NAME = "feature"
@@ -69,6 +78,48 @@ def is_valid_feature_snapshot(directory: Path) -> bool:
 
 def is_publishable_feature_staging(directory: Path) -> bool:
     return is_valid_feature_snapshot(directory) and (directory / FEATURE_REPORT_FILE).is_file()
+
+
+def require_publishable_feature_snapshot(directory: Path) -> None:
+    """Exige relatório selado, os doze Parquets e os CSVs do contrato.
+
+    A falha impede o commit. O chamador apaga o staging e mantém a
+    competência já publicada.
+    """
+    problems: list[str] = []
+    missing_parquet = [
+        name
+        for name in FEATURE_SERVING_PARQUET_NAMES
+        if not (directory / f"{name}.parquet").is_file()
+    ]
+    missing_csv = [
+        name
+        for name in FEATURE_CSV_TABLES
+        if not (directory / f"{name}.csv").is_file()
+    ]
+    if missing_parquet:
+        problems.append("Parquets ausentes: " + ", ".join(missing_parquet))
+    if missing_csv:
+        problems.append("CSVs ausentes: " + ", ".join(missing_csv))
+
+    report_path = directory / FEATURE_REPORT_FILE
+    if not report_path.is_file():
+        problems.append(f"{FEATURE_REPORT_FILE} ausente")
+    else:
+        try:
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            problems.append(f"{FEATURE_REPORT_FILE} ilegível")
+        else:
+            generated_at = payload.get("feature_generated_at") if isinstance(payload, dict) else None
+            if not isinstance(generated_at, str) or not generated_at:
+                problems.append("feature_generated_at ausente")
+
+    if problems:
+        raise FeaturePublicationError(
+            f"Staging Feature incompleto em {directory}. A publicação não ocorreu. "
+            + " ".join(problems)
+        )
 
 
 def readable_feature_table_dir(month_dir: Path) -> Path:

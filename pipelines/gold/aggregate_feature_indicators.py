@@ -1,8 +1,9 @@
 """Materializa as Golds de feature focus sem reescrever as tabelas já publicadas.
 
-A publicação padrão da Gold troca o diretório inteiro da competência. Por isso
-esta etapa grava somente arquivos próprios, depois da Gold atual, e recusa
-seguir se um arquivo preexistente mudar de tamanho ou de data de modificação.
+No pipeline mensal, a Feature nasce dentro do staging territorial e só fica
+visível no rename desse staging. A republicação avulsa continua gravando um
+staging irmão e fazendo o próprio commit de `feature/`, sem alterar arquivos
+territoriais já publicados.
 """
 
 from __future__ import annotations
@@ -31,10 +32,9 @@ from pipelines.gold.aggregate_indicators import (
     silver_mes_dir,
 )
 from pipelines.gold.feature_publication import (
-    FeaturePublicationError,
     commit_feature_directory,
     feature_staging_dir,
-    is_publishable_feature_staging,
+    require_publishable_feature_snapshot,
 )
 from pipelines.gold.feature_contract import (
     FEATURE_CSV_TABLES,
@@ -448,6 +448,179 @@ def _write_feature_report(staging_dir: Path, report: dict) -> None:
     temporary_report.replace(report_path)
 
 
+def write_feature_tables(destination: Path, bundle: FeatureBundle) -> dict[str, dict]:
+    """Grava Parquets e CSVs da Feature. Não publica e não sela o relatório."""
+    destination.mkdir(parents=True, exist_ok=False)
+    table_reports: dict[str, dict] = {}
+    for name, frame in bundle.tables.items():
+        table_started = time.perf_counter()
+        parquet_path = destination / f"{name}.parquet"
+        _write_parquet(frame, parquet_path)
+        write_csv = name in FEATURE_CSV_TABLES
+        csv_bytes = None
+        if write_csv:
+            csv_path = destination / f"{name}.csv"
+            _write_csv(frame, csv_path)
+            csv_bytes = csv_path.stat().st_size
+        estimated_csv = _estimate_csv_bytes(frame)
+        table_reports[name] = {
+            **bundle.report["tables"][name],
+            "written": True,
+            "empty": bool(frame.empty),
+            "parquet_bytes": parquet_path.stat().st_size,
+            "csv_bytes": csv_bytes,
+            "estimated_csv_bytes": estimated_csv,
+            "csv_omitted": not write_csv,
+            "csv_omission_reason": (
+                None
+                if write_csv
+                else (
+                    "Combinação município × ocupação observada é grande demais para "
+                    "um CSV analítico redundante. A Gold permanece completa em Parquet, "
+                    "sem corte Top N."
+                )
+            ),
+            "write_seconds": round(time.perf_counter() - table_started, 3),
+        }
+    return table_reports
+
+
+def _feature_report(
+    *,
+    ano: int,
+    mes: int,
+    started: float,
+    peak: int,
+    current: int,
+    bundle: FeatureBundle,
+    table_reports: dict[str, dict],
+    geo_dir: Path | None,
+) -> dict:
+    target_geo = geo_dir or FEATURE_GEO_DIR
+    unmatched_path = target_geo / "matches" / f"ano={ano}" / f"mes={mes:02d}" / "unmatched_municipios.parquet"
+    report = {
+        "ano": ano,
+        "mes": mes,
+        "generation_seconds": round(time.perf_counter() - started, 3),
+        "tracemalloc_peak_bytes": int(peak),
+        "tracemalloc_current_bytes": int(current),
+        "coverage": bundle.report["coverage"],
+        "geographic_sources": bundle.report["geographic_sources"],
+        "tables": table_reports,
+    }
+    try:
+        from app.core.config import PROJECT_ROOT
+
+        report["unmatched_municipalities_parquet"] = unmatched_path.relative_to(
+            PROJECT_ROOT
+        ).as_posix()
+    except ValueError:
+        report["unmatched_municipalities_parquet"] = str(unmatched_path)
+    return report
+
+
+def seal_feature_snapshot(destination: Path, report: dict) -> dict:
+    """Carimba `feature_generated_at` e só então aceita o snapshot.
+
+    O carimbo registra o fim da geração e da validação dentro do staging.
+    Não é o commit da competência.
+    """
+    report["feature_generated_at"] = datetime.now(timezone.utc).isoformat()
+    _write_feature_report(destination, report)
+    require_publishable_feature_snapshot(destination)
+    return report
+
+
+@dataclass
+class MonthlyFeatureStaging:
+    """Feature já escrita no staging mensal, ainda invisível ao leitor."""
+
+    bundle: FeatureBundle
+    seal: object
+    geo_dir: Path | None
+    dimension: GeographicDimension | None
+
+
+def stage_monthly_feature(
+    staging_month: Path,
+    df: pd.DataFrame,
+    ano: int,
+    mes: int,
+    *,
+    dimension: GeographicDimension | None = None,
+    geo_dir: Path | None = None,
+) -> MonthlyFeatureStaging:
+    """Constrói `staging/feature/` sem publicar a competência."""
+    tracemalloc.start()
+    started = time.perf_counter()
+    try:
+        bundle = build_feature_bundle(df, ano, dimension=dimension)
+        destination = staging_month / "feature"
+        table_reports = write_feature_tables(destination, bundle)
+        current, peak = tracemalloc.get_traced_memory()
+    finally:
+        if tracemalloc.is_tracing():
+            tracemalloc.stop()
+
+    def seal() -> dict:
+        report = _feature_report(
+            ano=ano,
+            mes=mes,
+            started=started,
+            peak=peak,
+            current=current,
+            bundle=bundle,
+            table_reports=table_reports,
+            geo_dir=geo_dir,
+        )
+        return seal_feature_snapshot(destination, report)
+
+    return MonthlyFeatureStaging(
+        bundle=bundle,
+        seal=seal,
+        geo_dir=geo_dir,
+        dimension=dimension,
+    )
+
+
+def write_feature_geo_assets(
+    bundle: FeatureBundle,
+    ano: int,
+    mes: int,
+    *,
+    dimension: GeographicDimension | None = None,
+    geo_dir: Path | None = None,
+) -> None:
+    """Atualiza dimensões e não correspondências depois do commit.
+
+    Falha aqui não desfaz o snapshot já publicado.
+    """
+    target_geo = geo_dir or FEATURE_GEO_DIR
+    match_dir = target_geo / "matches" / f"ano={ano}" / f"mes={mes:02d}"
+    try:
+        match_dir.mkdir(parents=True, exist_ok=True)
+        _write_parquet(
+            bundle.unmatched_municipalities,
+            match_dir / "unmatched_municipios.parquet",
+        )
+        _write_dimensions(dimension or load_geographic_dimension(), target_geo)
+    except Exception as exc:
+        logger.warning(
+            "[GOLD][FEATURE] snapshot publicado; atualização auxiliar de geo falhou | %s",
+            exc,
+        )
+
+
+def log_feature_snapshot(ano: int, mes: int, report: dict) -> None:
+    logger.info(
+        "[GOLD][FEATURE] ano=%s mes=%s tabelas=%s segundos=%s",
+        ano,
+        mes,
+        len(report.get("tables", {})),
+        report.get("generation_seconds"),
+    )
+
+
 def materialize_feature_gold(
     df: pd.DataFrame,
     ano: int,
@@ -457,12 +630,12 @@ def materialize_feature_gold(
     dimension: GeographicDimension | None = None,
     geo_dir: Path | None = None,
 ) -> dict:
-    """Monta a Feature num staging e só então publica o diretório `feature/`.
+    """Republica só a Feature, com commit próprio em `feature/`.
 
-    A agregação e a escrita não alteram `feature/` ativo. O commit é o rename
-    do staging. Uma falha antes desse rename não mexe na Gold territorial nem
-    na Feature já publicada. `feature_generated_at` sela o snapshot imediatamente
-    antes do rename e não é o `published_at` territorial.
+    O pipeline mensal não usa esta função. Ela permanece para comando avulso,
+    manutenção e compatibilidade. A agregação não altera a Gold territorial.
+    `feature_generated_at` sela o staging antes do rename da Feature e não é
+    o `published_at` territorial.
     """
     if mes is None:
         month_name = output_dir.name
@@ -475,97 +648,45 @@ def materialize_feature_gold(
     started = time.perf_counter()
     owned = _owned_names()
     snapshot = _snapshot(output_dir, owned)
-    bundle = build_feature_bundle(df, ano, dimension=dimension)
+    try:
+        bundle = build_feature_bundle(df, ano, dimension=dimension)
+        current, peak = tracemalloc.get_traced_memory()
+    finally:
+        if tracemalloc.is_tracing():
+            tracemalloc.stop()
     staging_dir = feature_staging_dir(output_dir)
-    staging_dir.mkdir(parents=True, exist_ok=False)
     committed = False
     report: dict = {}
     try:
-        table_reports: dict[str, dict] = {}
-        for name, frame in bundle.tables.items():
-            table_started = time.perf_counter()
-            parquet_path = staging_dir / f"{name}.parquet"
-            _write_parquet(frame, parquet_path)
-            write_csv = name in FEATURE_CSV_TABLES
-            csv_bytes = None
-            if write_csv:
-                csv_path = staging_dir / f"{name}.csv"
-                _write_csv(frame, csv_path)
-                csv_bytes = csv_path.stat().st_size
-            estimated_csv = _estimate_csv_bytes(frame)
-            table_reports[name] = {
-                **bundle.report["tables"][name],
-                "written": True,
-                "empty": bool(frame.empty),
-                "parquet_bytes": parquet_path.stat().st_size,
-                "csv_bytes": csv_bytes,
-                "estimated_csv_bytes": estimated_csv,
-                "csv_omitted": not write_csv,
-                "csv_omission_reason": (
-                    None
-                    if write_csv
-                    else (
-                        "Combinação município × ocupação observada é grande demais para "
-                        "um CSV analítico redundante. A Gold permanece completa em Parquet, "
-                        "sem corte Top N."
-                    )
-                ),
-                "write_seconds": round(time.perf_counter() - table_started, 3),
-            }
-
-        target_geo = geo_dir or FEATURE_GEO_DIR
-        match_dir = target_geo / "matches" / f"ano={ano}" / f"mes={mes:02d}"
-        unmatched_path = match_dir / "unmatched_municipios.parquet"
-        current, peak = tracemalloc.get_traced_memory()
-        report = {
-            "ano": ano,
-            "mes": mes,
-            "feature_generated_at": datetime.now(timezone.utc).isoformat(),
-            "generation_seconds": round(time.perf_counter() - started, 3),
-            "tracemalloc_peak_bytes": int(peak),
-            "tracemalloc_current_bytes": int(current),
-            "coverage": bundle.report["coverage"],
-            "geographic_sources": bundle.report["geographic_sources"],
-            "tables": table_reports,
-        }
-        try:
-            from app.core.config import PROJECT_ROOT
-
-            report["unmatched_municipalities_parquet"] = unmatched_path.relative_to(
-                PROJECT_ROOT
-            ).as_posix()
-        except ValueError:
-            report["unmatched_municipalities_parquet"] = str(unmatched_path)
-        _write_feature_report(staging_dir, report)
-        if not is_publishable_feature_staging(staging_dir):
-            raise FeaturePublicationError(
-                f"Staging Feature incompleto em {staging_dir}. A publicação não ocorreu."
-            )
+        table_reports = write_feature_tables(staging_dir, bundle)
+        report = seal_feature_snapshot(
+            staging_dir,
+            _feature_report(
+                ano=ano,
+                mes=mes,
+                started=started,
+                peak=peak,
+                current=current,
+                bundle=bundle,
+                table_reports=table_reports,
+                geo_dir=geo_dir,
+            ),
+        )
         _assert_unchanged(output_dir, snapshot)
         commit_feature_directory(staging_dir, output_dir)
         committed = True
     finally:
-        if tracemalloc.is_tracing():
-            tracemalloc.stop()
         if not committed and staging_dir.exists():
             shutil.rmtree(staging_dir, ignore_errors=True)
-    try:
-        match_dir.mkdir(parents=True, exist_ok=True)
-        _write_parquet(bundle.unmatched_municipalities, unmatched_path)
-        _write_dimensions(dimension or load_geographic_dimension(), target_geo)
-    except Exception as exc:
-        logger.warning(
-            "[GOLD][FEATURE] snapshot publicado; atualização auxiliar de geo falhou | %s",
-            exc,
-        )
-    _assert_unchanged(output_dir, snapshot)
-    logger.info(
-        "[GOLD][FEATURE] ano=%s mes=%s tabelas=%s segundos=%s",
+    write_feature_geo_assets(
+        bundle,
         ano,
         mes,
-        len(report.get("tables", {})),
-        report.get("generation_seconds"),
+        dimension=dimension,
+        geo_dir=geo_dir,
     )
+    _assert_unchanged(output_dir, snapshot)
+    log_feature_snapshot(ano, mes, report)
     return report
 
 

@@ -313,8 +313,23 @@ def publicar_tabelas_gold(
     tabelas: dict[str, pd.DataFrame],
     sheet_map: dict[str, pd.DataFrame],
     silver_input: SilverInputValidationResult,
+    *,
+    feature_frame: pd.DataFrame | None = None,
+    feature_dimension=None,
+    feature_geo_dir: Path | None = None,
 ) -> GoldOutputValidationResult:
-    """Grava e valida a competência fora do caminho publicado antes do swap."""
+    """Monta território e Feature no mesmo staging e publica com um rename.
+
+    Sem `feature_frame`, publica só a Gold territorial. O pipeline mensal
+    sempre envia o frame: a Feature entra em `staging/feature/` e o commit
+    visível continua sendo `staging_dir.replace(final_dir)`.
+    """
+    from pipelines.gold.aggregate_feature_indicators import (
+        log_feature_snapshot,
+        stage_monthly_feature,
+        write_feature_geo_assets,
+    )
+
     ensure_dir(final_output_dir.parent)
     staging_dir = Path(
         tempfile.mkdtemp(
@@ -331,13 +346,42 @@ def publicar_tabelas_gold(
             for sheet_name, tabela in sheet_map.items():
                 escrever_aba_se_nao_vazia(writer, tabela, sheet_name)
 
-        return validate_and_publish_gold(
+        staged_feature = None
+        sealed_report: dict = {}
+        if feature_frame is not None:
+            staged_feature = stage_monthly_feature(
+                staging_dir,
+                feature_frame,
+                ano,
+                mes,
+                dimension=feature_dimension,
+                geo_dir=feature_geo_dir,
+            )
+
+            def before_commit() -> None:
+                sealed_report["report"] = staged_feature.seal()
+
+        else:
+            before_commit = None
+
+        result = validate_and_publish_gold(
             ano,
             mes,
             silver_input=silver_input,
             staging_dir=staging_dir,
             final_dir=final_output_dir,
+            before_commit=before_commit,
         )
+        if staged_feature is not None:
+            write_feature_geo_assets(
+                staged_feature.bundle,
+                ano,
+                mes,
+                dimension=staged_feature.dimension,
+                geo_dir=staged_feature.geo_dir,
+            )
+            log_feature_snapshot(ano, mes, sealed_report["report"])
+        return result
     finally:
         shutil.rmtree(staging_dir, ignore_errors=True)
 
@@ -636,11 +680,8 @@ def run_aggregate_indicators(ano: int, mes: int) -> None:
         tabelas,
         sheet_map,
         silver_input,
+        feature_frame=df,
     )
-
-    from pipelines.gold.aggregate_feature_indicators import materialize_feature_gold
-
-    materialize_feature_gold(df, ano, output_dir)
     logger.info(
         f"[GOLD] Concluído | output={output_dir} | validation={gold_output.validation_status}"
     )

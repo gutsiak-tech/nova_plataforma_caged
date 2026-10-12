@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -501,6 +502,7 @@ def validate_and_publish_gold(
     silver_input: SilverInputValidationResult,
     staging_dir: Path,
     final_dir: Path,
+    before_commit: Callable[[], None] | None = None,
 ) -> GoldOutputValidationResult:
     """Valida o staging e somente então o publica como competência corrente.
 
@@ -508,8 +510,11 @@ def validate_and_publish_gold(
     é gravado no metadata do staging imediatamente antes do rename que
     promove a pasta. Os dois viajam dentro do snapshot.
 
-    `published_at` marca a publicação da Gold territorial/base. A Feature Gold
-    pode gravar arquivos nessa pasta depois, sem atualizar esse campo.
+    `published_at` é o instante imediatamente anterior ao único commit
+    visível da competência. No pipeline mensal, `before_commit` valida a
+    Feature já gravada em `staging/feature/`. Uma falha nesse gancho
+    impede o rename. A republicação avulsa da Feature continua podendo
+    gravar `feature/` depois, sem alterar `published_at`.
     """
     gold_output = validate_gold_outputs(
         ano,
@@ -518,6 +523,9 @@ def validate_and_publish_gold(
         output_dir=staging_dir,
         reported_output_dir=final_dir,
     )
+    ensure_gold_output_valid(gold_output)
+    if before_commit is not None:
+        before_commit()
     write_gold_metadata(
         ano,
         mes,
@@ -525,7 +533,6 @@ def validate_and_publish_gold(
         gold_output,
         output_dir=staging_dir,
     )
-    ensure_gold_output_valid(gold_output)
     gold_output.published_at = datetime.now(timezone.utc).isoformat()
     write_gold_metadata(
         ano,
