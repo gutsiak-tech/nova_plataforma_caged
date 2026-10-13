@@ -1,6 +1,6 @@
 # Catálogo da camada Gold
 
-_Gerado em: 2026-10-05T15:21:55.966666+00:00_
+_Gerado em: 2026-10-13T17:49:37.189635+00:00_
 
 ## O que é a camada Gold
 
@@ -32,8 +32,8 @@ Cada competência válida contém tabelas analíticas em CSV e Parquet, além de
 
 ## Formatos
 
-- **CSV**: formato primário lido pela API.
-- **Parquet**: formato colunar espelhado, gerado pelo pipeline.
+- **Parquet**: formato colunar preferencial de leitura pela API quando disponível, gerado pelo pipeline.
+- **CSV**: formato complementar para interoperabilidade e inspeção.
 - **Excel consolidado**: `tabelas_caged_YYYY_MM.xlsx` (não é tabela analítica unitária).
 
 ## Granularidades
@@ -56,66 +56,79 @@ Cada competência válida contém tabelas analíticas em CSV e Parquet, além de
 
 | Competência | CSV | Parquet | Excel | Suspeitos | Observações |
 |---|---:|---:|---:|---|---|
-| 2026-02 | 50 | 50 | 1 | — | CSV/Parquet alinhados com pipeline atual (50 tabelas). |
-| 2026-03 | 50 | 50 | 1 | — | CSV/Parquet alinhados com pipeline atual (50 tabelas). |
-| 2026-04 | 50 | 50 | 1 | — | CSV/Parquet alinhados com pipeline atual (50 tabelas). |
-| 2026-05 | 50 | 50 | 1 | — | CSV/Parquet alinhados com pipeline atual (50 tabelas). |
-| 2026-06 | 50 | 50 | 1 | — | CSV/Parquet alinhados com pipeline atual (50 tabelas). |
+| 2026-01 | 61 | 62 | 1 | — | Parquet sem CSV: tabela_municipio_ocupacao |
+| 2026-02 | 61 | 62 | 1 | — | Parquet sem CSV: tabela_municipio_ocupacao |
+| 2026-03 | 61 | 62 | 1 | — | Parquet sem CSV: tabela_municipio_ocupacao |
+| 2026-04 | 61 | 62 | 1 | — | Parquet sem CSV: tabela_municipio_ocupacao |
+| 2026-05 | 61 | 62 | 1 | — | Parquet sem CSV: tabela_municipio_ocupacao |
+| 2026-06 | 61 | 62 | 1 | — | Parquet sem CSV: tabela_municipio_ocupacao |
 
 ## Tabelas encontradas
 
 | table_name | competências | scope | granularity | row_count | column_count | has_csv | has_parquet | suspected_legacy |
 |---|---|---|---|---:|---:|---|---|---|
-| tabela_municipio | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | municipio | 5503 | 5 | sim | sim | não |
-| tabela_municipio_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | municipio | 399 | 5 | sim | sim | não |
-| tabela_municipio_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | municipio | 29 | 5 | sim | sim | não |
-| tabela_ocupacao | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | ocupacao | 2498 | 4 | sim | sim | não |
-| tabela_ocupacao_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | ocupacao | 1808 | 4 | sim | sim | não |
-| tabela_ocupacao_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | ocupacao | 1469 | 4 | sim | sim | não |
-| tabela_perfil_faixa_etaria | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_faixa_etaria | 8 | 4 | sim | sim | não |
-| tabela_perfil_faixa_etaria_instrucao | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_faixa_etaria | 90 | 5 | sim | sim | não |
-| tabela_perfil_faixa_etaria_instrucao_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | perfil_faixa_etaria | 83 | 5 | sim | sim | não |
-| tabela_perfil_faixa_etaria_instrucao_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | perfil_faixa_etaria | 81 | 5 | sim | sim | não |
-| tabela_perfil_faixa_etaria_instrucao_salario | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 172 | 13 | sim | sim | não |
-| tabela_perfil_faixa_etaria_instrucao_salario_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 164 | 13 | sim | sim | não |
-| tabela_perfil_faixa_etaria_instrucao_salario_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 160 | 13 | sim | sim | não |
-| tabela_perfil_faixa_etaria_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | perfil_faixa_etaria | 8 | 4 | sim | sim | não |
-| tabela_perfil_faixa_etaria_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | perfil_faixa_etaria | 8 | 4 | sim | sim | não |
-| tabela_perfil_faixa_etaria_salario | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 16 | 12 | sim | sim | não |
-| tabela_perfil_faixa_etaria_salario_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 16 | 12 | sim | sim | não |
-| tabela_perfil_faixa_etaria_salario_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 16 | 12 | sim | sim | não |
-| tabela_perfil_graudeinstrucao | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_instrucao | 12 | 4 | sim | sim | não |
-| tabela_perfil_graudeinstrucao_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | perfil_instrucao | 12 | 4 | sim | sim | não |
-| tabela_perfil_graudeinstrucao_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | perfil_instrucao | 12 | 4 | sim | sim | não |
-| tabela_perfil_graudeinstrucao_salario | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 24 | 12 | sim | sim | não |
-| tabela_perfil_graudeinstrucao_salario_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 24 | 12 | sim | sim | não |
-| tabela_perfil_graudeinstrucao_salario_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 24 | 12 | sim | sim | não |
-| tabela_perfil_sexo | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_sexo | 2 | 4 | sim | sim | não |
-| tabela_perfil_sexo_faixa_etaria | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_sexo | 16 | 5 | sim | sim | não |
-| tabela_perfil_sexo_faixa_etaria_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | perfil_sexo | 15 | 5 | sim | sim | não |
-| tabela_perfil_sexo_faixa_etaria_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | perfil_sexo | 15 | 5 | sim | sim | não |
-| tabela_perfil_sexo_faixa_etaria_salario | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 32 | 13 | sim | sim | não |
-| tabela_perfil_sexo_faixa_etaria_salario_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 30 | 13 | sim | sim | não |
-| tabela_perfil_sexo_faixa_etaria_salario_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 30 | 13 | sim | sim | não |
-| tabela_perfil_sexo_instrucao | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_sexo | 24 | 5 | sim | sim | não |
-| tabela_perfil_sexo_instrucao_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | perfil_sexo | 24 | 5 | sim | sim | não |
-| tabela_perfil_sexo_instrucao_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | perfil_sexo | 24 | 5 | sim | sim | não |
-| tabela_perfil_sexo_instrucao_salario | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 48 | 13 | sim | sim | não |
-| tabela_perfil_sexo_instrucao_salario_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 48 | 13 | sim | sim | não |
-| tabela_perfil_sexo_instrucao_salario_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 48 | 13 | sim | sim | não |
-| tabela_perfil_sexo_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | perfil_sexo | 2 | 4 | sim | sim | não |
-| tabela_perfil_sexo_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | perfil_sexo | 2 | 4 | sim | sim | não |
-| tabela_perfil_sexo_salario | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 4 | 12 | sim | sim | não |
-| tabela_perfil_sexo_salario_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 4 | 12 | sim | sim | não |
-| tabela_perfil_sexo_salario_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 4 | 12 | sim | sim | não |
-| tabela_resumo | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | resumo | 1 | 4 | sim | sim | não |
-| tabela_resumo_salario | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 2 | 4 | sim | sim | não |
-| tabela_resumo_salario_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 2 | 4 | sim | sim | não |
-| tabela_resumo_salario_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 2 | 4 | sim | sim | não |
-| tabela_setor | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | setor | 22 | 4 | sim | sim | não |
-| tabela_setor_pr | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | setor | 21 | 4 | sim | sim | não |
-| tabela_setor_rmc | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | setor | 21 | 4 | sim | sim | não |
-| tabela_uf | 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | uf | 28 | 4 | sim | sim | não |
+| tabela_municipio | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | municipio | 5496 | 5 | sim | sim | não |
+| tabela_municipio_ocupacao | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | ocupacao | 386097 | 11 | não | sim | não |
+| tabela_municipio_perfil_faixa_etaria | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_faixa_etaria | 30564 | 11 | sim | sim | não |
+| tabela_municipio_perfil_graudeinstrucao | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_instrucao | 38276 | 11 | sim | sim | não |
+| tabela_municipio_perfil_sexo | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_sexo | 10659 | 11 | sim | sim | não |
+| tabela_municipio_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | municipio | 399 | 5 | sim | sim | não |
+| tabela_municipio_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | municipio | 29 | 5 | sim | sim | não |
+| tabela_municipio_salario | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 10749 | 11 | sim | sim | não |
+| tabela_municipio_setor | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | setor | 48509 | 11 | sim | sim | não |
+| tabela_ocupacao | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | ocupacao | 2493 | 4 | sim | sim | não |
+| tabela_ocupacao_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | ocupacao | 1747 | 4 | sim | sim | não |
+| tabela_ocupacao_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | ocupacao | 1382 | 4 | sim | sim | não |
+| tabela_perfil_faixa_etaria | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_faixa_etaria | 8 | 4 | sim | sim | não |
+| tabela_perfil_faixa_etaria_instrucao | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_faixa_etaria | 89 | 5 | sim | sim | não |
+| tabela_perfil_faixa_etaria_instrucao_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | perfil_faixa_etaria | 82 | 5 | sim | sim | não |
+| tabela_perfil_faixa_etaria_instrucao_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | perfil_faixa_etaria | 81 | 5 | sim | sim | não |
+| tabela_perfil_faixa_etaria_instrucao_salario | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 89 | 12 | sim | sim | não |
+| tabela_perfil_faixa_etaria_instrucao_salario_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 82 | 12 | sim | sim | não |
+| tabela_perfil_faixa_etaria_instrucao_salario_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 81 | 12 | sim | sim | não |
+| tabela_perfil_faixa_etaria_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | perfil_faixa_etaria | 8 | 4 | sim | sim | não |
+| tabela_perfil_faixa_etaria_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | perfil_faixa_etaria | 8 | 4 | sim | sim | não |
+| tabela_perfil_faixa_etaria_salario | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 8 | 11 | sim | sim | não |
+| tabela_perfil_faixa_etaria_salario_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 8 | 11 | sim | sim | não |
+| tabela_perfil_faixa_etaria_salario_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 8 | 11 | sim | sim | não |
+| tabela_perfil_graudeinstrucao | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_instrucao | 12 | 4 | sim | sim | não |
+| tabela_perfil_graudeinstrucao_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | perfil_instrucao | 12 | 4 | sim | sim | não |
+| tabela_perfil_graudeinstrucao_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | perfil_instrucao | 12 | 4 | sim | sim | não |
+| tabela_perfil_graudeinstrucao_salario | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 12 | 11 | sim | sim | não |
+| tabela_perfil_graudeinstrucao_salario_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 12 | 11 | sim | sim | não |
+| tabela_perfil_graudeinstrucao_salario_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 12 | 11 | sim | sim | não |
+| tabela_perfil_sexo | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_sexo | 2 | 4 | sim | sim | não |
+| tabela_perfil_sexo_faixa_etaria | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_sexo | 16 | 5 | sim | sim | não |
+| tabela_perfil_sexo_faixa_etaria_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | perfil_sexo | 15 | 5 | sim | sim | não |
+| tabela_perfil_sexo_faixa_etaria_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | perfil_sexo | 15 | 5 | sim | sim | não |
+| tabela_perfil_sexo_faixa_etaria_salario | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 16 | 12 | sim | sim | não |
+| tabela_perfil_sexo_faixa_etaria_salario_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 15 | 12 | sim | sim | não |
+| tabela_perfil_sexo_faixa_etaria_salario_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 15 | 12 | sim | sim | não |
+| tabela_perfil_sexo_instrucao | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_sexo | 24 | 5 | sim | sim | não |
+| tabela_perfil_sexo_instrucao_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | perfil_sexo | 24 | 5 | sim | sim | não |
+| tabela_perfil_sexo_instrucao_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | perfil_sexo | 24 | 5 | sim | sim | não |
+| tabela_perfil_sexo_instrucao_salario | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 24 | 12 | sim | sim | não |
+| tabela_perfil_sexo_instrucao_salario_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 24 | 12 | sim | sim | não |
+| tabela_perfil_sexo_instrucao_salario_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 24 | 12 | sim | sim | não |
+| tabela_perfil_sexo_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | perfil_sexo | 2 | 4 | sim | sim | não |
+| tabela_perfil_sexo_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | perfil_sexo | 2 | 4 | sim | sim | não |
+| tabela_perfil_sexo_salario | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 2 | 11 | sim | sim | não |
+| tabela_perfil_sexo_salario_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 2 | 11 | sim | sim | não |
+| tabela_perfil_sexo_salario_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 2 | 11 | sim | sim | não |
+| tabela_resumo | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | resumo | 1 | 4 | sim | sim | não |
+| tabela_resumo_salario | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 2 | 4 | sim | sim | não |
+| tabela_resumo_salario_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | salario | 2 | 4 | sim | sim | não |
+| tabela_resumo_salario_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | salario | 2 | 4 | sim | sim | não |
+| tabela_setor | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | setor | 21 | 4 | sim | sim | não |
+| tabela_setor_pr | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | parana | setor | 21 | 4 | sim | sim | não |
+| tabela_setor_rmc | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | rmc | setor | 21 | 4 | sim | sim | não |
+| tabela_uf | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | uf | 28 | 4 | sim | sim | não |
+| tabela_uf_ocupacao | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | ocupacao | 33126 | 8 | sim | sim | não |
+| tabela_uf_perfil_faixa_etaria | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_faixa_etaria | 204 | 8 | sim | sim | não |
+| tabela_uf_perfil_graudeinstrucao | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_instrucao | 332 | 8 | sim | sim | não |
+| tabela_uf_perfil_sexo | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | perfil_sexo | 56 | 8 | sim | sim | não |
+| tabela_uf_salario | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | salario | 56 | 8 | sim | sim | não |
+| tabela_uf_setor | 2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06 | brasil | setor | 543 | 8 | sim | sim | não |
 
 ## Artefatos suspeitos
 
