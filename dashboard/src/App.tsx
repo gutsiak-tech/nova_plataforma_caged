@@ -37,8 +37,17 @@ function isTerritorialPath(pathname: string) {
   return pathname === '/territorial' || pathname.startsWith('/territorial/')
 }
 
+function RedirectToTerritorial() {
+  const { search } = useLocation()
+  return <Navigate to={{ pathname: '/territorial', search }} replace />
+}
+
 export default function App() {
   const { pathname } = useLocation()
+  if (pathname === '/') {
+    return <RedirectToTerritorial />
+  }
+
   const territorialPending = isTerritorialPath(pathname) ? <TerritorialRouteLoading /> : null
 
   return (
@@ -59,7 +68,7 @@ export default function App() {
           </Route>
           <Route element={<AppShell />}>
             <Route
-              index
+              path="legacy"
               element={
                 <Suspense fallback={<PageFallback />}>
                   <ExecutivePage />
@@ -114,8 +123,8 @@ export default function App() {
                 </Suspense>
               }
             />
-            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
+          <Route path="*" element={<RedirectToTerritorial />} />
         </Routes>
       </MonthProvider>
     </ScopeProvider>

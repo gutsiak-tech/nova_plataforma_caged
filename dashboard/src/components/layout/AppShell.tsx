@@ -20,7 +20,7 @@ import { theme } from '../../lib/theme'
 
 const nav = [
   { to: '/territorial', label: 'Entrada territorial', icon: Compass },
-  { to: '/', label: 'Visão executiva', icon: Activity },
+  { to: '/legacy', label: 'Visão executiva', icon: Activity },
   { to: '/territorio', label: 'Território', icon: MapPinned },
   { to: '/setores', label: 'Setores', icon: Layers },
   { to: '/ocupacoes', label: 'Ocupações', icon: Briefcase },
@@ -75,7 +75,7 @@ export function AppShell() {
                   <NavLink
                     key={item.to}
                     to={navTarget(item.to, searchParams)}
-                    end={item.to === '/'}
+                    end={item.to === '/legacy'}
                     aria-label={item.label}
                     onMouseDown={handleSidebarNavMouseDown}
                     className={({ isActive }) =>
@@ -134,7 +134,7 @@ export function AppShell() {
                   <NavLink
                     key={item.to}
                     to={navTarget(item.to, searchParams)}
-                    end={item.to === '/'}
+                    end={item.to === '/legacy'}
                     className={({ isActive }) =>
                       clsx(
                         'rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/35',
