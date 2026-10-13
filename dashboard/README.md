@@ -1,8 +1,8 @@
-# CAGED — Painel analítico (Gold · 2026-01)
+# CAGED — Painel analítico
 
-Dashboard **React + TypeScript + Vite** que consome a API FastAPI em `app/` (`/api/gold/v1/*`), lendo os CSVs já gerados em:
+Dashboard **React + TypeScript + Vite** que consome a API FastAPI em `app/` (`/api/gold/v1/*`), lendo a Gold publicada em `data-lake/gold/caged/`.
 
-`data-lake/gold/caged/ano=2026/mes=01/`
+A competência inicial não é um mês fixo no frontend. A ordem é: query `ano`/`mes` válida, última competência válida no `localStorage` e, por fim, o `default` de `GET /api/gold/v1/competencias`. Sem `DEFAULT_ANO` e `DEFAULT_MES`, esse default é a Gold válida mais recente.
 
 ## Pré-requisitos
 
@@ -47,5 +47,5 @@ O seletor **Brasil / Paraná / RMC** alterna o sufixo dos arquivos Gold (`_pr`, 
 
 ## Próximos passos (arquitetura)
 
-- Parametrizar `ano` e `mes` na API (hoje fixo em **2026-01** no backend).
+- A API já recebe `ano` e `mes`. Sem override, a competência padrão é a Gold válida mais recente.
 - Endpoints de diff (`mes=02` vs `mes=01`) reutilizando o mesmo layout do dashboard.

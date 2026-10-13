@@ -40,7 +40,6 @@ Deixe claro para a equipe receptora:
 | **Mapas / PostGIS / Tegola** | Parcial ou em estágio separado (`infra/`, `sql/`); variáveis `POSTGRES_*` são opcionais |
 | **CI/CD** | Pode ficar para etapa posterior (pytest e build ainda são manuais) |
 | **Microdados do CAGED** | Devem ser obtidos pela universidade na fonte oficial; não vêm no repositório Git |
-| **Persistência de competência no dashboard** | Seleção pode resetar ao recarregar a página (melhoria futura) |
 
 ---
 
@@ -61,6 +60,13 @@ copy .env.example .env
 # DEFAULT_ANO e DEFAULT_MES são um override opcional e devem ser usados juntos
 # somente para fixar uma competência Gold válida. Sem eles, usa-se a latest válida.
 # Override incompleto ou inválido deixa o /ready não pronto.
+
+# Competência no dashboard, nesta ordem:
+# 1. query ano/mes válida
+# 2. última competência válida no localStorage
+# 3. default de GET /api/gold/v1/competencias
+# Sem DEFAULT_ANO/DEFAULT_MES, o default é a Gold válida mais recente.
+# A escolha do usuário permanece ao recarregar a página.
 
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
