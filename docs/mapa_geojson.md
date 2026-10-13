@@ -4,7 +4,7 @@ Documentação da estratégia de mapa adotada na etapa **M3** e preparação de 
 
 ## Estratégia
 
-O dashboard usa **GeoJSON estático** servido por `dashboard/public/geo/` antes de integrar PostGIS/Tegola. Métricas (saldo, admissões, desligamentos) continuam vindo da **camada Gold** via API; o mapa apenas fornece geometrias.
+O dashboard usa **GeoJSON estático** servido por `dashboard/public/geo/`. Métricas (saldo, admissões, desligamentos) vêm da **camada Gold** via API. O mapa fornece as geometrias. PostGIS e Tegola não entram nesse caminho.
 
 | Escopo | GeoJSON | Dados Gold |
 |--------|---------|------------|
@@ -36,12 +36,12 @@ Propriedades geradas nos GeoJSONs:
 - `uf`, `uf_sigla`, `uf_norm`, `cod_uf`
 - `municipio`, `municipio_norm`, `cod_municipio`
 
-Join inicial com a Gold por **nome normalizado** (`*_norm`). Código IBGE (`cod_municipio`) é preservado quando presente no shapefile para migração futura.
+Join com a Gold por **nome normalizado** (`*_norm`). O código IBGE (`cod_municipio`) também vai no GeoJSON e é o identificador do Feature Focus municipal.
 
 ## PostGIS e Tegola
 
-A infraestrutura em `infra/docker-compose.yml` e `services/tileserver/` permanece para etapa futura (**M6**), após integração de código IBGE na Gold e correção das views SQL.
+A infraestrutura em `infra/docker-compose.yml` e `services/tileserver/` existe e não é usada pelo mapa atual.
 
-## Próxima etapa
+## Estado do mapa
 
-**M4** — implementar `TerritoryMap` com Leaflet/react-leaflet, substituindo `MapPlaceholder`.
+`TerritoryMap` (Leaflet) já está no dashboard. `MapPlaceholder` aparece quando o GeoJSON não carrega. A experiência territorial do Brasil renderiza `ufs.presentation.geojson`.

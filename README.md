@@ -28,33 +28,49 @@ O **CAGED Dashboard** analisa microdados do Novo CAGED e apresenta indicadores d
 - **Perfil demográfico** — sexo, faixa etária, grau de instrução
 - **Salários** — indicadores derivados por perfil
 
-O produto trabalha por **competência ano/mês**. A API aceita `ano` e `mes` nos endpoints Gold; o dashboard carrega competências disponíveis via `/api/gold/v1/competencias` e envia `ano`/`mes` em todas as consultas.
+A entrada do produto é **`/`**. Essa rota redireciona para **`/territorial`**, a experiência atual (Brasil, Paraná, RMC e Feature Focus). **`/legacy`** preserva a visão executiva anterior. As demais páginas antigas continuam em `/territorio`, `/setores`, `/ocupacoes`, `/perfil`, `/salario` e `/sobre`.
 
-No estado atual, o projeto está funcional com dados Gold válidos para as competências `2026-02` a `2026-06`.
+O painel lê arquivos locais da Gold. **PostGIS e Tegola não são necessários** para a plataforma atual. O mapa usa GeoJSON estático em `dashboard/public/geo/`.
+
+O produto trabalha por **competência ano/mês**. Há Gold territorial e Feature Gold válidas para **janeiro a junho de 2026**. A API aceita `ano` e `mes`; o dashboard carrega as competências em `/api/gold/v1/competencias`.
+
+Política de competência no dashboard, nesta ordem:
+
+1. query `?ano=&mes=` válida
+2. última competência válida no `localStorage` (`caged-dashboard:last-competencia`)
+3. `default` de `GET /api/gold/v1/competencias`
+4. última Gold válida da lista
+
+Sem `DEFAULT_ANO` e `DEFAULT_MES`, o default da API é a Gold válida mais recente.
 
 ---
 
 ## 2. Arquitetura
 
 ```
-Novo CAGED (microdados)
+Novo CAGED (microdados.txt)
         ↓
-     Bronze          ← ingestão e metadados
+     Bronze
         ↓
-     Silver          ← limpeza, padronização, enriquecimento
+     Silver
         ↓
-      Gold           ← indicadores analíticos (CSV + Parquet)
+ staging mensal          ← Gold territorial + staging/feature/
         ↓
-    FastAPI          ← leitura da Gold, catálogo e competências
+ validação e um rename   ← snapshot único (mes=NN); a anterior fica em mes=NN.__previous__
         ↓
- Dashboard React    ← visualização interativa
+    FastAPI              ← lê arquivos locais; cache e warm no processo
+        ↓
+ Dashboard React         ← / redireciona para /territorial
 ```
+
+A publicação mensal grava território e Feature no mesmo staging e os torna visíveis num único rename. O detalhe de staging, previous, retiring, `published_at` e layout flat está em [`docs/handoff_institucional.md`](docs/handoff_institucional.md).
 
 **Implementação atual**
 
 - Pipeline com **Python + pandas**, arquivos no **filesystem** local (`data-lake/`)
-- Segue o **conceito Medallion** (Bronze → Silver → Gold)
+- Conceito Medallion (Bronze → Silver → Gold), com Feature Gold no mesmo snapshot mensal
 - **Não** usa Databricks, Spark ou Delta Lake nesta versão
+- **Não** depende de PostGIS ou Tegola para servir o painel
 
 Uma migração futura para Databricks/Spark/Delta Lake é possível como evolução arquitetural, mas **não faz parte da implementação atual**.
 
@@ -66,7 +82,7 @@ Uma migração futura para Databricks/Spark/Delta Lake é possível como evoluç
 |---|---|
 | `data-lake/bronze/` | Microdados brutos e metadados de ingestão |
 | `data-lake/silver/` | Dados tratados (Parquet) |
-| `data-lake/gold/` | Tabelas analíticas por competência (`ano=YYYY/mes=MM/`) |
+| `data-lake/gold/` | Gold territorial por competência e dimensões `gold/geo` da Feature |
 | `data-lake/catalog/` | Catálogo formal da Gold (`gold_catalog.json`, `.csv`) |
 | `pipelines/` | Jobs Bronze, Silver e Gold |
 | `pipelines/common/` | Utilitários e dicionários compartilhados |
@@ -74,7 +90,8 @@ Uma migração futura para Databricks/Spark/Delta Lake é possível como evoluç
 | `app/` | API FastAPI (`app/main.py`, rotas e serviços) |
 | `dashboard/` | Frontend React + TypeScript + Vite |
 | `docs/` | Documentação (`DATA_CONTRACT.md`, `CONFIG.md`, `pipeline.md`, `gold_catalog.md`, …) |
-| `tests/` | Testes automatizados (pytest) |
+| `tests/` | Testes Python (pytest), inclusive contrato Gold/API/front-end |
+| `dashboard/src/**/*.test.ts` | Testes do frontend (Vitest) |
 | `infra/` | Infraestrutura auxiliar (ex.: `docker-compose.yml` para PostGIS) |
 | `sql/` | Scripts SQL (schema, views, índices — uso com PostGIS) |
 | `src/` | Código legado; preferir `pipelines/` e `pipelines/common/` |
@@ -88,9 +105,10 @@ Uma migração futura para Databricks/Spark/Delta Lake é possível como evoluç
 - Dependências Python listadas em [`requirements.txt`](requirements.txt) (ex.: `pandas==3.0.1`, `fastapi==0.135.3`, `uvicorn==0.43.0`)
 - Dependências de desenvolvimento em [`requirements-dev.txt`](requirements-dev.txt) (`pytest`, `httpx`)
 - Dependências do dashboard em [`dashboard/package.json`](dashboard/package.json)
-- **Dados Bronze** do CAGED na estrutura esperada (ver seção 8)
+- **Gold publicada** para servir o painel (`data-lake/gold/caged`, dimensões `data-lake/gold/geo` e `data-lake/catalog`)
+- **Bronze** apenas para processar ou atualizar uma competência (ver seção 8)
 
-O diretório `data-lake/` não é versionado (ver `.gitignore`). É necessário ter os microdados localmente antes de rodar o pipeline.
+O diretório `data-lake/` não é versionado (ver `.gitignore`). O repositório sozinho não sobe o painel com dados.
 
 ---
 
@@ -113,7 +131,7 @@ pip install -r requirements-dev.txt
    - `DEFAULT_UF` — UF de referência (ex.: `PR`)
    - `APP_ENV` / `APP_VERSION` — identificação nos endpoints `/health` e `/ready` (opcional)
 3. Variáveis `BRONZE_*` ajustam validação da Bronze (opcional; há padrões no código)
-4. Variáveis `POSTGRES_*` são opcionais e usadas apenas para integração com PostGIS/mapas
+4. Variáveis `POSTGRES_*` são opcionais. O painel atual não usa PostGIS. Elas só entram se a infra auxiliar em `infra/` for ligada.
 
 **Não** commite o arquivo `.env` nem credenciais reais no repositório.
 
@@ -151,6 +169,8 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 | `/api/gold/v1/overview` | KPIs e rankings agregados |
 | `/api/gold/v1/table/{base_name}` | Tabela Gold paginada |
 | `/api/gold/v1/catalog` | Catálogo formal da camada Gold |
+| `/api/gold/v1/feature/uf/{uf_sigla}` | Feature Focus de uma UF |
+| `/api/gold/v1/feature/municipality/{cod_municipio}` | Feature Focus de um município |
 
 ### Exemplos
 
@@ -200,9 +220,13 @@ Códigos comuns: `INVALID_COMPETENCIA`, `GOLD_COMPETENCIA_NOT_FOUND`, `GOLD_TABL
 cd dashboard
 npm install
 npm run dev
+npm test
+npm run build
 ```
 
-O Vite inicia em **http://localhost:5173/** por padrão (configurado em `dashboard/vite.config.ts`). Se a porta estiver ocupada, o Vite pode usar outra (ex.: **5174**).
+`npm test` executa `vitest run`. `npm run build` executa `tsc -b && vite build`.
+
+Abra **http://localhost:5173/**. A raiz redireciona para `/territorial`. O Vite usa a porta **5173** (`dashboard/vite.config.ts`). Se ela estiver ocupada, o Vite pode usar outra (ex.: **5174**).
 
 O dashboard consome a API local via proxy (`/api` → `http://127.0.0.1:8000`, ver `dashboard/vite.config.ts`). **Inicie a API antes** do frontend.
 
@@ -330,8 +354,16 @@ python -m pipelines.jobs.run_monthly_pipeline --ano 2026 --mes 1
 python -m pipelines.jobs.run_monthly_pipeline --ano 2026 --mes 2
 ```
 
-Executa: **Bronze → Silver (com validação + metadata) → Gold (com validação + metadata)**.
+Executa: **Bronze → Silver → staging mensal (Gold territorial + `feature/`) → validação → um rename**.
 Os pipelines mutáveis exigem `--ano` e `--mes`; o override de leitura da API não dispara reprocessamento.
+
+Não há flag para reconstruir só a Gold. `--validate-gold-only` valida artefatos já gravados e reescreve `metadata.json`; não agrega a Silver de novo.
+
+A Feature avulsa abaixo **não** é a publicação mensal. Ela faz o próprio commit de `feature/` e não altera `published_at` territorial:
+
+```powershell
+python -m pipelines.gold.aggregate_feature_indicators --ano 2026 --mes 2
+```
 
 ### Pipeline com catálogo
 
@@ -401,7 +433,7 @@ Equivalente funcional a `--catalog-only`.
 | `columns` / `dtypes` | Schema |
 | `is_suspected_legacy` | Indica possível artefato legado |
 
-Cada competência processada pelo pipeline atual gera **50 tabelas** CSV + 50 Parquet + 1 Excel consolidado.
+Cada competência publicada pelo pipeline mensal atual leva a Gold territorial (CSV e Parquet, mais um Excel) e a Feature Gold no mesmo snapshot. A Feature de serviço são 12 Parquets; 11 deles também têm CSV. `tabela_municipio_ocupacao` é só Parquet. Os meses já gravados de janeiro a junho de 2026 ainda estão no layout flat, com esses arquivos na raiz de `mes=NN`. Uma publicação nova grava a Feature em `feature/`. O número de arquivos não é um contrato fixo de “50 tabelas”.
 
 ---
 
@@ -419,7 +451,7 @@ O dashboard consome esse endpoint no `MonthProvider` (`dashboard/src/context/Mon
 
 - A competência é sincronizada com a query string **`?ano=&mes=`** na URL.
 - Também é gravada em **`localStorage`** (chave `caged-dashboard:last-competencia`).
-- Prioridade de resolução inicial: URL → localStorage → default da API → competência válida mais recente da lista retornada (ver `dashboard/src/lib/competenciaPersistence.ts`).
+- Prioridade de resolução inicial: URL → localStorage → default da API → última Gold válida da lista (ver `dashboard/src/lib/competenciaPersistence.ts`).
 
 ---
 
@@ -452,6 +484,13 @@ Cobertura principal:
 - **Contrato Gold/API/front-end** (`test_gold_frontend_contract.py`) — validação estática de tabelas, colunas, regras de scope e alinhamento com [`docs/DATA_CONTRACT.md`](docs/DATA_CONTRACT.md); **não depende** de data-lake populado
 - **Alinhamento de configuração** (`test_config_alignment.py`) — validação estática de Tailwind único, limite 2000, defaults ano/mês, `VITE_API_BASE_URL`, proxy Vite, CORS documentado, referências a [`docs/DATA_CONTRACT.md`](docs/DATA_CONTRACT.md) e documentação de testes; **não depende** de data-lake
 
+Frontend, na pasta `dashboard`:
+
+```powershell
+npm test
+npm run build
+```
+
 Documentação do contrato de dados: [`docs/DATA_CONTRACT.md`](docs/DATA_CONTRACT.md). Configuração operacional: [`docs/CONFIG.md`](docs/CONFIG.md).
 
 ---
@@ -476,8 +515,14 @@ Documentação do contrato de dados: [`docs/DATA_CONTRACT.md`](docs/DATA_CONTRAC
 
 - Implementação **local com pandas**, sem Spark/Databricks
 - Performance depende do volume dos microdados na máquina local
-- Mapas geográficos: estratégia **GeoJSON estático** (`pipelines/geo/prepare_geo_assets.py`, ver [`docs/mapa_geojson.md`](docs/mapa_geojson.md)); PostGIS/Tegola permanecem em estágio separado. O dashboard implementa **`TerritoryMap`** (Leaflet); **`MapPlaceholder`** aparece apenas como fallback (GeoJSON indisponível, erro de carga ou ausência de métricas).
-- O catálogo fica desatualizado se não for regenerado após mudanças na Gold
+- O mapa territorial atual é **GeoJSON estático** em `dashboard/public/geo/` (`pipelines/geo/prepare_geo_assets.py`, ver [`docs/mapa_geojson.md`](docs/mapa_geojson.md)). PostGIS/Tegola em `infra/` são opcionais e o painel não os usa. **`MapPlaceholder`** aparece só se o GeoJSON não carregar.
+- O catálogo (`data-lake/catalog/`) fica fora do snapshot mensal e desatualiza se não for regenerado depois da Gold. `docs/gold_catalog.md` nasce desse job; não edite o Markdown à mão.
+- `/meta` lista CSV na raiz do mês e não entra em `feature/`.
+- `data-lake/gold/geo` é dimensão global, reescrita depois do commit da Feature.
+- Não há lock entre duas publicações simultâneas do mesmo mês.
+- O cache da API é local ao processo. Depois de publicar, reinicie o uvicorn.
+- Janeiro a junho de 2026 estão no layout flat e não trazem `published_at` nem `feature_generated_at`. O leitor aceita esse layout.
+- O dashboard anterior permanece em `/legacy`.
 - CORS configurável via **`CORS_ORIGINS`** no `.env` (defaults locais Vite em `app/core/config.py`); ver [`docs/CONFIG.md`](docs/CONFIG.md)
 - Em produção sem reverse proxy `/api`, **`VITE_API_BASE_URL`** deve ser definida no build (ver seção 7 e [`dashboard/.env.example`](dashboard/.env.example))
 - O pipeline Bronze **não baixa** microdados automaticamente — a universidade deve obter os arquivos da fonte oficial
@@ -488,8 +533,7 @@ Documentação do contrato de dados: [`docs/DATA_CONTRACT.md`](docs/DATA_CONTRAC
 ## 14. Roadmap sugerido
 
 - Página “Sobre os dados” consumindo `/api/gold/v1/catalog` programaticamente (hoje menciona o endpoint, mas não há `fetchCatalog` em `dashboard/src/api/gold.ts`)
-- Documentação institucional (`docs/entrega_institucional.md`, etc.) alinhada ao estado atual (contagem de testes, persistência, mapa)
-- CI com `pytest` e `npm run build`
+- CI com `pytest`, `npm test` e `npm run build`
 - Validações automáticas de qualidade da Gold no pipeline
 - Diff de catálogo entre execuções (auditoria de schema)
 - Integração opcional do job de catálogo ao final de todo processamento mensal (sem flag)

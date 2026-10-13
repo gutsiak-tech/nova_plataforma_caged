@@ -1,308 +1,161 @@
-# Documento de entrega institucional — CAGED Dashboard
+# Documento de entrega institucional — Plataforma Becker / CAGED
 
-Este documento orienta a **universidade receptora** na instalação, operação, atualização mensal e manutenção do sistema CAGED Dashboard.
+Este documento fixa o pacote que a equipe receptora deve receber. O guia de operação é [`handoff_institucional.md`](handoff_institucional.md).
 
-Documentação técnica complementar:
-
-- [`README.md`](../README.md) — visão geral e referência rápida
-- [`handoff_institucional.md`](handoff_institucional.md) — guia de handoff e primeira execução
-- [`checklist_handoff.md`](checklist_handoff.md) — checklist de recepção institucional
-- [`runbook_operacional.md`](runbook_operacional.md) — rotina mensal e diagnóstico
-- [`pipeline.md`](pipeline.md) — detalhes do pipeline e flags de catálogo
-- [`gold_catalog.md`](gold_catalog.md) — catálogo formal da camada Gold
-- [`../scripts/start_stack.ps1`](../scripts/start_stack.ps1) — inicia API e dashboard localmente
+O produto entregue abre em `/`, redireciona para `/territorial` e lê Gold local. PostGIS e Tegola não fazem parte do caminho de serving.
 
 ---
 
-## 1. Objetivo da entrega
+## 1. Repositório
 
-O **CAGED Dashboard** é entregue como um **sistema analítico completo** para consulta de dados do **Novo CAGED** (movimentação de emprego formal no Brasil). O pacote inclui:
+Entregar o código da branch `frontend/entrada-territorial`, não a tag `v1.0.0` em `main`, se o objetivo for o produto territorial atual.
 
-- um **pipeline de dados** em arquitetura Medallion (Bronze → Silver → Gold);
-- uma **API REST** (FastAPI) que expõe indicadores e tabelas da camada Gold;
-- um **dashboard web** (React) para visualização interativa;
-- um **catálogo formal** das tabelas Gold, com metadados e validações;
-- **testes automatizados** e documentação operacional.
+Entram no pacote de código:
 
-A implementação atual é **local**, com Python/pandas e arquivos no filesystem. **Não utiliza Databricks, Spark ou Delta Lake** nesta versão.
+- `app/`
+- `dashboard/` (código, `package.json`, `package-lock.json` e assets versionados em `dashboard/public/`, inclusive os GeoJSON de `dashboard/public/geo/`)
+- `pipelines/`
+- `tests/`
+- `scripts/`
+- `docs/`
+- `requirements.txt` e `requirements-dev.txt`
+- `.env.example` e `dashboard/.env.example`
+- `README.md`
 
----
+`infra/`, `sql/` e `services/tileserver/` podem acompanhar como material opcional de PostGIS. O painel atual não os executa.
 
-## 2. Componentes entregues
-
-| Componente | Descrição | Localização principal |
-|---|---|---|
-| Pipeline de dados | Orquestra Bronze, Silver e Gold | `pipelines/` |
-| Camada Bronze | Ingestão de microdados brutos | `data-lake/bronze/caged/` |
-| Camada Silver | Limpeza e padronização | `data-lake/silver/caged/` |
-| Camada Gold | Indicadores analíticos (CSV + Parquet) | `data-lake/gold/caged/` |
-| API FastAPI | Leitura da Gold, competências e catálogo | `app/` |
-| Dashboard React | Interface analítica | `dashboard/` |
-| Catálogo Gold | Metadados das tabelas | `data-lake/catalog/`, `docs/gold_catalog.md` |
-| Documentação | README, pipeline, catálogo, este documento | `docs/`, `README.md` |
-| Testes automatizados | Validação de pipeline, API e catálogo | `tests/` |
+`src/` é código legado. O caminho operacional é `pipelines/` e `app/`.
 
 ---
 
-## 3. O que a universidade precisa para operar
+## 2. Data-lake
 
-### Ambiente de software
+O data-lake não está no Git. Vai numa cópia separada.
 
-- **Python 3.11+** com ambiente virtual (dependências em `requirements.txt` e `requirements-dev.txt`)
-- **Node.js 20.19+** e **npm** (dependências em `dashboard/package.json`)
-- Editor de texto e terminal (PowerShell no Windows, ou equivalente em Linux/macOS)
+### Obrigatório para serving
 
-### Dados
+- `data-lake/gold/caged` (janeiro a junho de 2026, no estado atual)
+- `data-lake/gold/geo/dim_uf.csv` e `dim_uf.parquet`
+- `data-lake/gold/geo/dim_municipio.csv` e `dim_municipio.parquet`
+- `data-lake/catalog` (`gold_catalog.json` e `gold_catalog.csv`)
 
-- Arquivos mensais do **Novo CAGED**, em especial `microdados.txt`, obtidos da fonte oficial
-- Estrutura Bronze esperada (ver seção 4)
+Sem essa Gold, a API sobe e `/ready` não fica pronto. Sem as dimensões `gold/geo`, overview e tabelas territoriais ainda respondem; Feature Focus de UF e município não.
 
-### Configuração
+O catálogo em disco pode estar atrás da Gold (sem janeiro e sem as tabelas de Feature). Ele basta para o arquivo existir. A equipe deve regenerá-lo com `--catalog-only` quando for usar `/catalog` como inventário. Não editar `docs/gold_catalog.md` à mão: o job o reescreve.
 
-1. Copiar `.env.example` para `.env`
-2. Ajustar `DEFAULT_UF` se necessário. `DEFAULT_ANO` e `DEFAULT_MES` são um override opcional e devem ser definidos em conjunto apenas para fixar uma Gold válida; quando omitidos, o sistema usa a competência Gold válida mais recente. Override inválido deixa o `/ready` não pronto.
-3. Variáveis `POSTGRES_*` são opcionais (apenas para mapas/PostGIS, estágio separado)
+### Recomendado para continuidade
 
-### Procedimento mensal
+- `data-lake/bronze/caged` — fonte para reprocessar; não é reconstruída pelo pipeline
+- `data-lake/silver/caged` — reconstruível a partir da Bronze; evita reler o microdados
+- `data-lake/geodata/` — shapefiles para regerar malhas
+- `data-lake/metadata/novo_caged_layout_movimentacao.xlsx` — referência de layout; o código não lê esse arquivo
 
-Após a configuração inicial, a rotina principal é: **obter microdados → rodar pipeline → subir API e dashboard → validar competência**.
+### Não precisa ir para servir o painel
+
+- `data-lake/gold/geo/matches` — diagnóstico; o pipeline recria
+- `data-lake/geo/processed` — cópia; os GeoJSON usados pelo dashboard já estão no Git
+- `data-lake/geo/raw` — vazio, só `.gitkeep`
+- `data-lake/bronze/geodata` — shapefile do Paraná repetido
+- `data-lake/bronze/pop` — nenhum módulo do produto lê essa pasta
 
 ---
 
-## 4. Procedimento mensal recomendado
+## 3. Não entregar
 
-### Passo a passo
+- `.env` local
+- `.venv`
+- `dashboard/node_modules`
+- `dashboard/dist`
+- `logs/`
+- caches de ferramenta
+- `__pycache__`
+- `.pytest_cache`
+- relatórios locais ignorados (`RELATORIO_*.md`)
+- pastas transitórias de publicação (`staging`, `.retiring`), se aparecerem no meio de um job
 
-**1.** Baixar ou obter o arquivo `microdados.txt` do Novo CAGED para a competência desejada (ano/mês).
+A equipe receptora cria o próprio `.env` a partir de `.env.example`. `DEFAULT_ANO` e `DEFAULT_MES` ficam comentados, salvo decisão de fixar uma competência. São um override opcional e só funcionam juntos.
 
-**2.** Colocar o arquivo na pasta Bronze:
+---
 
-```text
-data-lake/bronze/caged/ano=YYYY/mes=MM/microdados.txt
-```
-
-Exemplo para março de 2026:
-
-```text
-data-lake/bronze/caged/ano=2026/mes=03/microdados.txt
-```
-
-Opcional: incluir `dicionario.pdf` na mesma pasta.
-
-**2b.** (Recomendado) Validar a Bronze antes do processamento completo:
+## 4. Instalação mínima
 
 ```powershell
-python -m pipelines.jobs.run_monthly_pipeline --ano YYYY --mes MM --validate-bronze-only
-```
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+copy .env.example .env
 
-Confira `metadata.json` na mesma pasta (`validation_status`, `file_sha256`, `warnings`, `errors`).
+cd dashboard
+npm install
+cd ..
 
-**2c.** (Opcional) Validar Bronze + Silver sem Gold:
-
-```powershell
-python -m pipelines.jobs.run_monthly_pipeline --ano YYYY --mes MM --validate-silver-only
-```
-
-Confira `data-lake/silver/caged/ano=YYYY/mes=MM/metadata.json` (`validation_status`, `admissao_sum`, `saldo_consistency_ok`).
-
-**2d.** (Opcional) Validar artefatos Gold sem reprocessar:
-
-```powershell
-python -m pipelines.jobs.run_monthly_pipeline --ano YYYY --mes MM --validate-gold-only
-```
-
-Confira `data-lake/gold/caged/ano=YYYY/mes=MM/metadata.json` (`required_tables_ok`, `totals_consistency_ok`).
-
-**3.** (Recomendado) Executar a rotina automatizada:
-
-```powershell
-.\scripts\monthly_run.ps1 -Ano YYYY -Mes MM
-```
-
-Equivalente aos passos 2b–2d + pipeline + smoke test. Ver [`runbook_operacional.md`](runbook_operacional.md).
-
-**4.** (Alternativa manual) Executar o pipeline com geração e validação do catálogo:
-
-```powershell
-python -m pipelines.jobs.run_monthly_pipeline --ano YYYY --mes MM --build-catalog --validate-catalog
-```
-
-Exemplo:
-
-```powershell
-python -m pipelines.jobs.run_monthly_pipeline --ano 2026 --mes 3 --build-catalog --validate-catalog
-```
-
-**5.** Subir a API (em um terminal):
-
-```powershell
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-**6.** Subir o dashboard (em outro terminal):
+Noutro terminal:
 
 ```powershell
 cd dashboard
 npm run dev
 ```
 
-**7.** Verificar `GET /ready` na API antes de apresentar o dashboard.
+Abrir `http://localhost:5173/` e confirmar o redirect para `/territorial`.
 
-**8.** Abrir o dashboard no navegador (geralmente `http://localhost:5173/`) e verificar se a nova competência aparece no seletor.
+---
 
-### Quando usar `--catalog-only`
+## 5. Atualização mensal mínima
 
-Se a camada Gold já existir e apenas o catálogo precisar ser atualizado (ex.: após limpeza de artefatos legados):
+```text
+data-lake/bronze/caged/ano=YYYY/mes=MM/microdados.txt
+```
+
+```powershell
+.\scripts\monthly_run.ps1 -Ano YYYY -Mes MM
+```
+
+Equivalente com catálogo, se o script não for usado:
+
+```powershell
+python -m pipelines.jobs.run_monthly_pipeline --ano YYYY --mes MM --build-catalog --validate-catalog
+```
+
+Reiniciar o uvicorn depois da publicação. Conferir `/ready` e o seletor.
+
+Só o catálogo, sem reprocessar dados:
 
 ```powershell
 python -m pipelines.jobs.run_monthly_pipeline --catalog-only
-python -m pipelines.jobs.run_monthly_pipeline --catalog-only --validate-catalog --ano 2026 --mes 3
 ```
 
-Este modo **não** executa Bronze, Silver ou Gold.
-
----
-
-## 5. Como validar se deu certo
-
-### Pipeline
-
-- Saída do comando sem erros críticos
-- Log em `logs/pipeline.log` com mensagem de conclusão
-- Validação do catálogo sem erros críticos (warnings leves podem aparecer no log)
-
-### Camadas de dados
-
-| Camada | O que verificar |
-|---|---|
-| Silver | `data-lake/silver/caged/ano=YYYY/mes=MM/caged_tratado.parquet` existe |
-| Gold | `data-lake/gold/caged/ano=YYYY/mes=MM/` com 50 CSV + 50 Parquet + 1 Excel |
-| Catálogo | `data-lake/catalog/gold_catalog.json` atualizado (`generated_at` recente) |
-
-A API **prefere Parquet** na leitura das tabelas Gold e mantém **CSV como fallback** e formato institucional legível. Os endpoints e respostas JSON não mudam.
-
-### API
-
-```text
-GET http://127.0.0.1:8000/health
-GET http://127.0.0.1:8000/ready
-GET http://127.0.0.1:8000/api/gold/v1/competencias
-GET http://127.0.0.1:8000/api/gold/v1/overview?scope=br&ano=YYYY&mes=MM
-GET http://127.0.0.1:8000/api/gold/v1/catalog?ano=YYYY&mes=MM
-```
-
-- **`/health`** — API viva; não exige `data-lake`.
-- **`/ready`** — prontidão operacional (Gold, competências, catálogo). Use **antes de demonstrações**; **503** lista `problems` se algo faltar.
-
-Competência inexistente nos endpoints Gold retorna erro estruturado com `error.code` (ex.: `GOLD_COMPETENCIA_NOT_FOUND`).
-
-A nova competência deve aparecer em `/competencias` e retornar dados em `/overview`.
-
-### Dashboard
-
-- Seletor de competência exibe a nova entrada (ex.: `jan`, `fev`, `mar`)
-- KPIs e gráficos carregam sem erro no console do navegador
-- Nenhum erro 404/500 nas chamadas `/api/gold/v1/*`
-
----
-
-## 6. Rotina de testes
+Feature avulsa, fora da rotina mensal:
 
 ```powershell
-python -m pytest tests/ -v
+python -m pipelines.gold.aggregate_feature_indicators --ano YYYY --mes MM
 ```
 
-A contagem da suíte evolui com o projeto. Consulte o total atual com:
-
-```powershell
-python -m pytest tests/ --collect-only -q
-```
-
-### Quando executar
-
-| Momento | Motivo |
-|---|---|
-| Antes de colocar em uso / deploy | Confirmar integridade do pacote |
-| Depois de alterações no pipeline | Evitar regressão em Silver/Gold |
-| Depois de alterações na API | Validar contratos dos endpoints |
-| Depois de limpeza ou manutenção na Gold | Garantir que catálogo e rotas continuam corretos |
-| Após atualizar dependências Python | Detectar incompatibilidades |
-
-Os testes **não** substituem a validação com microdados reais; complementam com fixtures controladas.
+Esse comando tem commit próprio de `feature/` e não substitui o snapshot mensal.
 
 ---
 
-## 7. Cuidados importantes
+## 6. Como saber que o pacote está completo
 
-- **Não editar** arquivos da camada Gold manualmente — use o pipeline para regenerar
-- **Não versionar** `data-lake/` (dados locais, listados no `.gitignore`)
-- **Não versionar** `.env` (credenciais e configuração local)
-- **Manter** `.env.example` atualizado quando novas variáveis forem adicionadas
-- **Manter** `README.md` e `docs/` alinhados após mudanças operacionais
-- **Regenerar o catálogo** após qualquer alteração na Gold (`--build-catalog` ou `--catalog-only`)
-- **Preferir** `pipelines/` e `pipelines/common/` em vez de `src/` (código legado)
-- **Consultar** `docs/gold_catalog.md` para entender escopos (`brasil`, `parana`, `rmc`) e granularidades
+- `GET /health` retorna `status: ok`
+- `GET /ready` retorna `status: ready`
+- `/` abre `/territorial`
+- Brasil, Paraná, RMC, uma UF e um município carregam
+- janeiro de 2026 aparece entre as competências
+- troca de competência e `?ano=&mes=` funcionam
+- `/legacy` abre
+- `python -m pytest tests/ -v` e `npm test` rodam
+- `npm run build` conclui
 
----
-
-## 8. Limitações da versão atual
-
-- Arquitetura **local com pandas**; performance depende da máquina e do tamanho dos microdados
-- **Não usa Databricks/Spark/Delta Lake** — migração futura possível, mas não implementada
-- **Mapas geográficos** (PostGIS/Tegola) em estágio separado; o dashboard usa placeholder para mapas
-- O pipeline Bronze **não baixa** microdados automaticamente — a universidade deve obter os arquivos da fonte oficial
-- O catálogo pode **ficar desatualizado** se não for regenerado após mudanças na Gold
-- A competência selecionada no dashboard **não persiste** entre reloads da página
-- **Deploy institucional** (servidor, domínio, HTTPS, backup) ainda precisa ser definido pela universidade
+Checklist item a item: [`checklist_handoff.md`](checklist_handoff.md).
 
 ---
 
-## 9. Evoluções recomendadas
+## 7. Limitações que viajam com o pacote
 
-Prioridades sugeridas para a universidade, após a recepção:
+Estão descritas em [`handoff_institucional.md`](handoff_institucional.md). Em resumo: catálogo fora do snapshot, `/meta` sem descer em `feature/`, `gold/geo` global, Feature avulsa com publicação própria, sem lock entre publishers, cache local ao processo, meses jan–jun no layout flat sem `published_at`/`feature_generated_at`, e o dashboard anterior em `/legacy`.
 
-1. **CI/CD** — executar `pytest` e `npm run build` automaticamente em cada alteração
-2. **Deploy em servidor institucional** — API e dashboard acessíveis na rede da universidade
-3. **Página “Sobre os dados”** — consumir `/api/gold/v1/catalog` no dashboard
-4. **Persistência da competência** — `localStorage` ou parâmetro na URL (`?ano=&mes=`)
-5. **Deep-link por ano/mês** — compartilhar links diretos para uma competência
-6. **Automação de ingestão** — script para download periódico do CAGED (se a fonte permitir)
-7. **Diff de catálogo** — comparar execuções para auditoria de schema
-8. **Futuro:** migração para Databricks/Spark/Delta Lake, se o volume ou a governança institucional exigir
-
----
-
-## 10. Checklist de entrega
-
-Checklist detalhado de handoff: [`checklist_handoff.md`](checklist_handoff.md).
-
-Use também este resumo na recepção e antes de colocar o sistema em operação:
-
-- [ ] `README.md` atualizado
-- [ ] `.env.example` presente
-- [ ] `requirements.txt` presente
-- [ ] `requirements-dev.txt` presente
-- [ ] `docs/pipeline.md` presente
-- [ ] `docs/gold_catalog.md` presente
-- [ ] `docs/entrega_institucional.md` presente
-- [ ] Testes passando (`python -m pytest tests/ -v`)
-- [ ] API rodando (`/health` retorna 200; `/ready` retorna 200 quando Gold e catálogo existem)
-- [ ] Dashboard rodando (página carrega sem erro)
-- [ ] Pipeline documentado e executável
-- [ ] Catálogo documentado e regenerável
-- [ ] Microdados Bronze disponíveis para pelo menos uma competência
-- [ ] Gold processada para competências de demonstração
-- [ ] Responsável institucional designado para manutenção mensal
-
----
-
-## Contato e manutenção
-
-Recomenda-se que a universidade designe um **responsável técnico** (equipe de TI, laboratório ou projeto de pesquisa) para:
-
-- executar o procedimento mensal da seção 4;
-- acompanhar logs em `logs/pipeline.log`;
-- manter o ambiente Python e Node atualizados;
-- reportar problemas e evoluções conforme a seção 9.
-
-Para referência rápida de comandos, consulte o [`README.md`](../README.md).
+Deploy em servidor, CI e o fetch de `/catalog` na página Sobre continuam por fazer. Mapa, persistência de competência e Feature Focus já estão entregues.

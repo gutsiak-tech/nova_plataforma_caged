@@ -30,14 +30,12 @@ Consulte este documento **antes** de:
 
 ```
 microdados Novo CAGED
-  → Silver (pipelines/silver/)
-  → Gold (pipelines/gold/aggregate_indicators.py)
-  → data-lake/gold/caged/ano=*/mes=*/
-  → app/services/gold_service.py (leitura Parquet/CSV, resolução de scope)
-  → app/api/routes_gold.py (endpoints REST)
-  → dashboard/src/api/gold.ts (fetchCompetencias, fetchOverview, fetchTable)
-  → dashboard/src/pages/*.tsx
-  → componentes visuais (gráficos, mapa, tabelas, heatmaps)
+  → Bronze → Silver
+  → staging mensal (Gold territorial + feature/)
+  → um rename para data-lake/gold/caged/ano=*/mes=*/
+  → app/services/gold_service.py e feature_gold_service.py (Parquet primeiro, CSV se o Parquet faltar)
+  → /api/gold/v1 (overview, table, feature)
+  → dashboard: /territorial e, no shell antigo, as páginas em pages/*.tsx
 ```
 
 | Etapa | Função |
@@ -59,9 +57,9 @@ microdados Novo CAGED
 |-------|--------|-----------|
 | `pipelines/gold/aggregate_indicators.py` | Define schema real de cada tabela Gold via `agregar_movimentacao()` e `agregar_movimentacao_salario()`. | Não documenta consumo por página; alteração aqui quebra API e front. |
 | `pipelines/gold/gold_contract.py` | Contrato operacional mínimo: `MIN_REQUIRED_GOLD_TABLES` (11 tabelas físicas), `TABELA_RESUMO_COLUMNS`, colunas Silver exigidas. | Subconjunto institucional; não cobre tabelas de perfil/salário usadas pelo dashboard. |
-| `app/services/gold_catalog_service.py` | `CURRENT_PIPELINE_TABLES` (50 nomes físicos com sufixos); gera/valida catálogo com colunas e dtypes. | Catálogo JSON em `data-lake/` (gitignored); não é consumido pelo front-end. |
+| `app/services/gold_catalog_service.py` | `CURRENT_PIPELINE_TABLES`: tabelas territoriais com sufixos e os nomes de `FEATURE_GOLD_TABLE_NAMES`. Gera e valida o catálogo. | O JSON fica em `data-lake/catalog/` (gitignored) e fora do snapshot do mês. O front não busca `/catalog` para desenhar a tela. |
 | `app/api/routes_gold.py` | Contrato HTTP: endpoints, shape de `/overview`, lista hardcoded de tabelas internas. | Duplica lista de tabelas sem vínculo automático com `goldTables.ts`. |
-| `app/services/gold_service.py` | Resolução `base_name` + scope → `{base_name}{suffix}.csv/.parquet`; `BR_ONLY_TABLES`; competências via `tabela_resumo.csv`. | Não valida colunas mínimas por tabela. |
+| `app/services/gold_service.py` | Resolução `base_name` + scope → `{base_name}{suffix}.parquet` com fallback CSV; `BR_ONLY_TABLES`. Competência válida: metadata com `validation_status` `ok` ou `warning` e tabelas mínimas, entre elas `tabela_resumo`. | Não valida colunas mínimas por tabela na leitura. |
 | `dashboard/src/api/goldTables.ts` | 13 `base_name` usados em `fetchTable()`. | Não inclui tabelas consumidas apenas via `/overview`. |
 | `dashboard/src/api/goldColumns.ts` | 18 nomes de colunas referenciados no front-end. | `COMPETENCIA` definida mas não referenciada em código TS de páginas/componentes. |
 | `dashboard/src/api/types.ts` | Tipos de resposta (`OverviewResponse`, `TableResponse`); `GoldRow = Record<string, unknown>`. | Sem tipagem por coluna; não garante presença de campos em runtime. |
@@ -95,7 +93,7 @@ Implementação: `app/services/gold_service.py` → `_suffix_for_scope()`, `_tab
 | `tabela_municipio` | `pr` | `tabela_municipio_pr.csv` / `.parquet` |
 | `tabela_uf` | `br` | `tabela_uf.csv` / `.parquet` (única variante física) |
 
-**Competência válida:** diretório `ano=*/mes=*` deve conter `tabela_resumo.csv` (`gold_service._is_valid_competencia_dir`).
+**Competência válida:** `inspect_gold_competencia_dir` exige metadata legível com `validation_status` `ok` ou `warning` e os arquivos mínimos (`tabela_resumo` entre eles), em CSV ou Parquet. A API prefere Parquet.
 
 ---
 
@@ -105,13 +103,30 @@ Prefixo do router: `/api/gold/v1` (`app/api/routes_gold.py`).
 
 | Endpoint | Handler | Consumido pelo front-end? | Arquivo front-end | Observações |
 |----------|---------|---------------------------|-------------------|-------------|
-| `GET /api/gold/v1/competencias` | `competencias()` | **Sim** | `dashboard/src/api/gold.ts` → `fetchCompetencias()`; `AboutDataPage.tsx` | Lista competências disponíveis; default em `items[].default`. Marker de competência: presença de `tabela_resumo.csv`. |
-| `GET /api/gold/v1/overview` | `overview()` | **Sim** | `gold.ts` → `fetchOverview()`; `ExecutivePage`, `ProfilesPage`, `SalaryPage` | Params: `scope`, `ano`, `mes`. Agrega rankings, perfis e resumo KPI. |
-| `GET /api/gold/v1/table/{base_name}` | `table()` | **Sim** | `gold.ts` → `fetchTable()`; `TerritoryPage`, `SectorPage`, `OccupationPage`, `ProfilesPage`, `SalaryPage` | Params: `scope`, `ano`, `mes`, `limit`, `offset`, `sort_by`, `sort_dir`. Default API `limit=50`; front usa `limit=2000` por padrão. |
-| `GET /api/gold/v1/catalog` | `catalog()` | **Não** (programaticamente) | Mencionado em texto em `AboutDataPage.tsx` | Requer `data-lake/catalog/gold_catalog.json`. Erros: `GOLD_CATALOG_NOT_FOUND`, `GOLD_CATALOG_UNREADABLE`. |
-| `GET /api/gold/v1/meta` | `meta()` | **Não** | não identificado no repositório | Retorna `month`, `scopes`, `tables` disponíveis no mês. |
+| `GET /api/gold/v1/competencias` | `competencias()` | **Sim** | `dashboard/src/api/gold.ts` → `fetchCompetencias()`; `MonthContext` | Lista competências Gold válidas. O `default` segue o override ou a mais recente. |
+| `GET /api/gold/v1/overview` | `overview()` | **Sim** | `gold.ts` → `fetchOverview()`; experiência territorial e páginas legadas (`ExecutivePage`, `ProfilesPage`, `SalaryPage`) | Params: `scope`, `ano`, `mes`, `movimento`. Resposta pode vir do response cache. |
+| `GET /api/gold/v1/table/{base_name}` | `table()` | **Sim** | `gold.ts` → `fetchTable()`; detalhe territorial e páginas legadas | Params: `scope`, `ano`, `mes`, `limit`, `offset`, `sort_by`, `sort_dir`. Default API `limit=50`; front usa `limit=2000` por padrão. |
+| `GET /api/gold/v1/feature/uf/{uf_sigla}` | `feature_uf()` | **Sim** | `dashboard/src/api/featureFocus.ts` quando o escopo é Brasil | Sigla de 2 letras. Params: `ano`, `mes`, `movimento`, `limit`. |
+| `GET /api/gold/v1/feature/municipality/{cod_municipio}` | `feature_municipality()` | **Sim** | `featureFocus.ts` em Paraná e RMC | Código IBGE de 7 dígitos. Mesmos parâmetros. |
+| `GET /api/gold/v1/catalog` | `catalog()` | **Não** (programaticamente) | Mencionado em texto em `AboutDataPage.tsx` | Lê `data-lake/catalog/gold_catalog.json`, fora do snapshot do mês. Erros: `GOLD_CATALOG_NOT_FOUND`, `GOLD_CATALOG_UNREADABLE`. |
+| `GET /api/gold/v1/meta` | `meta()` | **Não** | não há cliente no dashboard | Lista CSV na raiz de `mes=NN`. Não entra no diretório `feature/`. |
 
-**Códigos de erro estruturados** (`app/api/errors.py` → `GoldAPIError`): incluem `INVALID_SCOPE`, `INVALID_COMPETENCIA`, `GOLD_COMPETENCIA_NOT_FOUND`, `GOLD_TABLE_NOT_FOUND`, `GOLD_CATALOG_NOT_FOUND`, entre outros.
+**Códigos de erro estruturados** (`app/api/errors.py` → `GoldAPIError`): incluem `INVALID_SCOPE`, `INVALID_COMPETENCIA`, `GOLD_COMPETENCIA_NOT_FOUND`, `GOLD_TABLE_NOT_FOUND`, `GOLD_CATALOG_NOT_FOUND`, `FEATURE_NOT_FOUND`, `INVALID_FEATURE_ID`, entre outros.
+
+### Feature Gold
+
+Contrato em `pipelines/gold/feature_contract.py`. São 12 Parquets de serviço. Onze também têm CSV. `tabela_municipio_ocupacao` é só Parquet.
+
+Nomes: `tabela_uf_salario`, `tabela_uf_setor`, `tabela_uf_ocupacao`, `tabela_uf_perfil_sexo`, `tabela_uf_perfil_faixa_etaria`, `tabela_uf_perfil_graudeinstrucao`, `tabela_municipio_salario`, `tabela_municipio_setor`, `tabela_municipio_perfil_sexo`, `tabela_municipio_perfil_faixa_etaria`, `tabela_municipio_perfil_graudeinstrucao`, `tabela_municipio_ocupacao`.
+
+Dois layouts convivem:
+
+- **Flat.** Os Parquets estão na raiz de `mes=NN`. O leitor usa a raiz quando não existem `feature/` nem `feature.__previous__/`. Janeiro a junho de 2026 estão nesse layout.
+- **`feature/`.** A publicação mensal atual grava a Feature dentro do snapshot. Se `feature/` ou `feature.__previous__/` existe, a raiz deixa de ser fonte. A ordem de leitura é `feature/` válido, depois `feature.__previous__/`.
+
+A identidade geográfica da Feature vem de `data-lake/gold/geo/dim_uf.parquet` e `dim_municipio.parquet`, dimensão global, não de uma pasta dentro do mês.
+
+O cliente `fetchFeatureFocus` espera um JSON com `identity`, `period`, `kpis` (`admissoes`, `desligamentos`, `saldo`), `salary`, `sectors`, `occupations`, `profiles`, `timeseries` e `comparison`. Implementação: `app/api/routes_feature.py` e `app/services/feature_gold_service.py`.
 
 ---
 
@@ -357,34 +372,43 @@ Atualize `DATA_CONTRACT.md` sempre que:
 5. Atualizar **`docs/DATA_CONTRACT.md`** (este arquivo).
 6. Rodar `npm run build` no dashboard.
 7. Rodar testes Python (`pytest`).
-8. Regenerar catálogo Gold se schema mudou: `python -m pipelines.jobs.build_gold_catalog` ou pipeline com `--build-catalog`.
-9. *(Etapa futura)* Atualizar testes de contrato em `tests/test_gold_frontend_contract.py`.
+8. Regenerar catálogo Gold se o schema mudou: `python -m pipelines.jobs.build_gold_catalog` ou pipeline com `--build-catalog`.
+9. Atualizar `tests/test_gold_frontend_contract.py` e os testes Vitest do dashboard quando o contrato de tela mudar. Os dois já existem.
 
 ---
 
-## 14. Lacunas conhecidas
+## 14. Lacunas e limites conhecidos
 
-- **Sem testes formais** que validem todas as colunas usadas pelo front-end contra o schema Gold.
-- **`goldTables.ts` incompleto** em relação ao `/overview` — não lista `tabela_resumo`, `tabela_perfil_sexo`, `tabela_perfil_faixa_etaria`, `tabela_perfil_graudeinstrucao`.
-- **`GoldRow` genérico** — `Record<string, unknown>` em `types.ts`; sem tipos por tabela.
-- **`/api/gold/v1/catalog` não consumido** programaticamente pelo dashboard (`gold.ts` não expõe cliente).
-- **`/api/gold/v1/meta` não consumido** pelo dashboard.
-- **Catálogo depende do data-lake** — `gold_catalog.json` em `data-lake/catalog/` (gitignored); geração via `write_gold_catalog()` em `gold_catalog_service.py`.
-- **Sem geração automática** de tipos TypeScript a partir do catálogo.
-- **Sem testes front-end** — `dashboard/package.json` não define script `test`.
-- **`GOLD_COLUMNS.COMPETENCIA`** definida sem uso no código de páginas/componentes.
-- **`gold_contract.py`** cobre apenas 11 tabelas mínimas; pipeline gera 50 nomes físicos (`CURRENT_PIPELINE_TABLES`).
+O que já existe:
+
+- Testes de contrato em `tests/test_gold_frontend_contract.py`. Eles conferem tabelas, colunas e termos deste arquivo contra o código, sem depender do data-lake populado. Não comparam cada coluna com um Parquet real.
+- Testes de frontend com Vitest. `dashboard/package.json` define `npm test` (`vitest run`), inclusive `dashboard/src/api/featureFocus.test.ts`.
+- Feature Gold e os dois layouts (flat e `feature/`), descritos na seção 5.
+
+Limites do desenho, não defeitos da tela atual:
+
+- **`goldTables.ts` não lista** tabelas lidas só pelo `/overview`: `tabela_resumo`, `tabela_perfil_sexo`, `tabela_perfil_faixa_etaria`, `tabela_perfil_graudeinstrucao`.
+- **`GoldRow` genérico** — `Record<string, unknown>` em `types.ts`.
+- **`/api/gold/v1/catalog` não é buscado** pelo dashboard (`gold.ts` não expõe cliente). O arquivo fica em `data-lake/catalog/`, fora do snapshot mensal.
+- **`/api/gold/v1/meta` não é buscado** pelo dashboard e não desce em `feature/`.
+- **`gold/geo` é dimensão global**, compartilhada pelas competências.
+- A publicação mensal leva território e Feature juntos. A Feature avulsa (`aggregate_feature_indicators`) tem commit próprio.
+- Não há lock entre dois publishers simultâneos. O cache da API é local ao processo.
+- Meses já publicados em layout flat, como janeiro–junho de 2026, não trazem `published_at` nem `feature_generated_at`.
+- **`GOLD_COLUMNS.COMPETENCIA`** está definida e não é a chave que as páginas usam para escolher o mês. O mês vem de `MonthContext`.
+- **`gold_contract.py`** lista as tabelas territoriais mínimas. `CURRENT_PIPELINE_TABLES` acrescenta perfis, salários e os nomes de Feature. Não há um tamanho fixo de “50 tabelas” como contrato do produto.
+- Não há geração automática de tipos TypeScript a partir do catálogo.
 
 ---
 
-## 15. Próxima etapa recomendada
+## 15. Manutenção deste contrato
 
-**Etapa 2B:** criar testes mínimos de contrato, provavelmente em:
+Os testes de contrato e o Vitest já cobrem o alinhamento estático. Ao mudar schema ou endpoint, atualize este arquivo e rode:
 
+```powershell
+python -m pytest tests/test_gold_frontend_contract.py -q
+cd dashboard
+npm test
 ```
-tests/test_gold_frontend_contract.py
-```
 
-Esses testes devem validar que as tabelas referenciadas por `GOLD_TABLES` / consumo via `/overview` possuem as **colunas mínimas esperadas** documentadas neste arquivo, preferencialmente usando **DataFrames sintéticos** (padrão já usado em `tests/test_gold_table_read.py`) para **não depender obrigatoriamente** do data-lake completo em CI.
-
-Possível evolução posterior (Etapa 2C): cruzar contrato com snapshot de `gold_catalog.json` versionado em `tests/fixtures/`.
+Evoluções ainda em aberto: o dashboard buscar `/catalog`, tipos por tabela no lugar de `GoldRow`, e um snapshot de catálogo versionado em `tests/fixtures/` se a equipe quiser travar o schema no CI.

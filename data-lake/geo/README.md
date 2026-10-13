@@ -4,7 +4,7 @@ Esta pasta contém a malha cartográfica usada pelo mapa da página **Territóri
 
 ## Objetivo
 
-Converter shapefiles oficiais em GeoJSONs leves e padronizados para consumo futuro pelo dashboard, **sem depender de PostGIS ou Tegola** na primeira versão do mapa.
+Converter shapefiles oficiais em GeoJSONs leves e padronizados. O dashboard já consome as cópias em `dashboard/public/geo/`. O painel não depende de PostGIS ou Tegola.
 
 ## Estrutura
 
@@ -73,7 +73,7 @@ O script recusa sobrescrever `ufs.geojson` e grava também `ufs.presentation.met
 
 ## Saídas geradas
 
-| Arquivo | Uso futuro no dashboard |
+| Arquivo | Uso no dashboard |
 |---------|-------------------------|
 | `ufs.geojson` | Mapa por UF quando `scope=br` |
 | `municipios_pr.geojson` | Mapa municipal quando `scope=pr` |
@@ -92,7 +92,6 @@ Todos os GeoJSONs são gerados em **EPSG:4326** (WGS84). Shapefiles em outro CRS
 
 Utilize malhas oficiais do **IBGE** ou fonte institucional autorizada. Documente a versão da malha (ano, escala) no repositório interno da universidade. Este repositório não distribui shapefiles brutos.
 
-## Próximas etapas
+## Fora deste fluxo
 
-- **M4** — implementar mapa mínimo no dashboard (Leaflet + join com dados Gold)
-- **M6** — PostGIS/Tegola, após código IBGE estável na camada Gold
+- PostGIS/Tegola em `infra/` e `services/tileserver/` continuam opcionais. O mapa atual não os usa.

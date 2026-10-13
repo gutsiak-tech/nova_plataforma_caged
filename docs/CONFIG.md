@@ -99,14 +99,14 @@ Origens permitidas vêm de **`CORS_ORIGINS`** no `.env` da raiz (CSV). Se vazio 
 
 | Variável | Back-end (`.env` / `app/core/config.py`) | Front-end |
 |----------|------------------------------------------|-----------|
-| `DEFAULT_ANO` | Override opcional; só é aceito junto de `DEFAULT_MES` e se a Gold for válida | Usa `default` de `/competencias`; não possui fallback local |
-| `DEFAULT_MES` | Override opcional; quando o par é omitido, usa a Gold válida mais recente | A lista vazia ou erro da API produz estado seguro, sem competência fictícia |
+| `DEFAULT_ANO` | Override opcional; só é aceito junto de `DEFAULT_MES` e se a Gold for válida | Não há mês fixo no frontend. A ordem é URL, `localStorage`, `default` da API e a última Gold válida |
+| `DEFAULT_MES` | Override opcional; quando o par é omitido, usa a Gold válida mais recente | Lista vazia ou erro da API não inventa competência |
 | `DEFAULT_UF` | `PR` | não identificado uso direto no dashboard |
 | `CORS_ORIGINS` | CSV no `.env`; defaults Vite em `config.py` se vazio | não aplicável (CORS é do back-end) |
 | `VITE_API_BASE_URL` | não aplicável | `dashboard/.env.example`; vazio = `/api` relativo (proxy ou reverse proxy) |
 | **Scope** | `br` default em `GET /table` e `GET /overview` | `ScopeContext.tsx` → `useState<Scope>('br')` |
 
-Competência no UI: URL `?ano=&mes=` + `localStorage` — ver `dashboard/src/lib/competenciaPersistence.ts` e `MonthContext.tsx`.
+Competência no UI, nesta ordem: URL `?ano=&mes=` válida, `localStorage`, `default` de `/competencias`, última Gold válida. Ver `dashboard/src/lib/competenciaPersistence.ts` e `MonthContext.tsx`.
 
 Os pipelines mutáveis não inferem uma competência: `--ano` e `--mes` são
 obrigatórios, evitando reprocessamento acidental da Gold padrão de leitura.

@@ -1,146 +1,144 @@
 # Pipeline mensal CAGED
 
-Este documento descreve como executar o pipeline Bronze → Silver → Gold e, opcionalmente, regenerar o catálogo formal da camada Gold.
+O caminho real da publicação mensal é:
 
-## Rotina automatizada (recomendada)
+```
+microdados.txt
+    → Bronze
+    → Silver
+    → staging mensal
+        Gold territorial
+        + staging/feature/
+    → validação
+    → um rename
+    → current (mes=NN) / previous (mes=NN.__previous__)
+    → API
+```
+
+A rotina operacional recomendada é:
 
 ```powershell
-.\scripts\monthly_run.ps1 -Ano 2026 -Mes 3
+.\scripts\monthly_run.ps1 -Ano YYYY -Mes MM
 ```
 
-Smoke test separado (API deve estar ativa):
+Ela valida a Bronze, executa Bronze+Silver, roda o pipeline completo com catálogo e validação de catálogo, valida a Gold já publicada e, se a API estiver no ar, chama o smoke test.
+
+O comando Python equivalente, quando se quer uma passagem só:
 
 ```powershell
-.\scripts\smoke_api.ps1 -Ano 2026 -Mes 2
+python -m pipelines.jobs.run_monthly_pipeline --ano YYYY --mes MM --build-catalog --validate-catalog
 ```
 
-Detalhes operacionais: [`runbook_operacional.md`](runbook_operacional.md).
+Isso faz Bronze, Silver, o snapshot único (território e Feature) e o catálogo. Os pipelines mutáveis exigem `--ano` e `--mes`. O override `DEFAULT_ANO` / `DEFAULT_MES` da API não dispara reprocessamento.
 
-## Pipeline mensal (padrão)
+Não há flag para gerar somente a Gold a partir da Silver. `--validate-gold-only` não agrega de novo: confere os arquivos que já estão na pasta e regrava `metadata.json` no canônico.
 
-Executa ingestão, limpeza e agregação Gold para a competência informada:
+Smoke test separado (API ativa):
 
-```bash
-python -m pipelines.jobs.run_monthly_pipeline --ano 2026 --mes 2
+```powershell
+.\scripts\smoke_api.ps1 -Ano YYYY -Mes MM
 ```
 
-Sem flags adicionais: **Bronze (validação + metadata) → Silver → Gold**.
+Publicação, previous e falha: [`runbook_operacional.md`](runbook_operacional.md). Transferência: [`handoff_institucional.md`](handoff_institucional.md).
 
-Use quando for processar uma competência nova ou reprocessar Bronze/Silver/Gold.
+---
 
-## Validar apenas Bronze (sem Silver/Gold)
+## Feature avulsa
 
-Valida `microdados.txt`, grava `metadata.json` e interrompe se houver erro crítico:
+Não é a publicação mensal. Tem commit próprio de `feature/` e não altera `published_at` da Gold territorial. A base territorial da competência precisa existir, e a Silver também.
 
-```bash
-python -m pipelines.jobs.run_monthly_pipeline --ano 2026 --mes 3 --validate-bronze-only
+```powershell
+python -m pipelines.gold.aggregate_feature_indicators --ano YYYY --mes MM
 ```
 
-Use após colocar o arquivo bruto na pasta Bronze e **antes** do processamento mensal.
+`--all` percorre competências Silver que já tenham Gold de base. Use para manutenção. O mês novo deve sair de `monthly_run.ps1` ou de `run_monthly_pipeline`, que colocam a Feature dentro do staging territorial.
 
-O `metadata.json` registra SHA256, colunas, competência, `validation_status` (`ok` / `warning` / `error`), `warnings` e `errors`.
+---
 
-## Validar Bronze + Silver (sem Gold)
+## Validar apenas Bronze
 
-Executa Bronze, processa Silver, valida qualidade e grava `metadata.json` na Silver — sem Gold nem catálogo:
+Valida `microdados.txt`, grava `metadata.json` e interrompe se houver erro crítico. Não gera Silver nem Gold.
 
-```bash
-python -m pipelines.jobs.run_monthly_pipeline --ano 2026 --mes 2 --validate-silver-only
+```powershell
+python -m pipelines.jobs.run_monthly_pipeline --ano YYYY --mes MM --validate-bronze-only
 ```
 
-A Silver verifica colunas críticas, competência, coerência admissão/desligamento e consulta o metadata Bronze (`error` bloqueia; ausência gera warning).
+O metadata registra SHA256, colunas, competência e `validation_status` (`ok`, `warning` ou `error`). `warning` segue. `error` para.
 
-## Validar apenas Gold (sem Bronze/Silver)
+## Validar Bronze + Silver
 
-Valida artefatos Gold já gerados e grava `metadata.json` na competência:
+Executa Bronze e Silver, grava `caged_tratado.parquet` e o metadata da Silver. Não publica Gold.
 
-```bash
-python -m pipelines.jobs.run_monthly_pipeline --ano 2026 --mes 2 --validate-gold-only
+```powershell
+python -m pipelines.jobs.run_monthly_pipeline --ano YYYY --mes MM --validate-silver-only
 ```
 
-Verifica tabelas obrigatórias, pares CSV/Parquet, `tabela_resumo` e coerência de totais. Com `--build-catalog`, regenera o catálogo após a validação.
+`validation_status=error` na Bronze bloqueia a Silver. Metadata Bronze ausente gera warning e a Silver segue.
 
-## Pipeline mensal com catálogo Gold
+## Validar Gold existente
 
-Após processar a competência, regenera os artefatos do catálogo:
-
-```bash
-python -m pipelines.jobs.run_monthly_pipeline --ano 2026 --mes 2 --build-catalog
+```powershell
+python -m pipelines.jobs.run_monthly_pipeline --ano YYYY --mes MM --validate-gold-only
 ```
 
-Use após um processamento completo quando quiser atualizar o catálogo na mesma execução.
+Confere tabelas obrigatórias, pares CSV/Parquet onde o contrato exige os dois, `tabela_resumo` e totais. Com `--build-catalog`, regenera o catálogo depois. Não reconstrói as tabelas.
 
-## Pipeline mensal com catálogo e validação leve
+## Pipeline sem regenerar o catálogo
 
-```bash
-python -m pipelines.jobs.run_monthly_pipeline --ano 2026 --mes 2 --build-catalog --validate-catalog
+```powershell
+python -m pipelines.jobs.run_monthly_pipeline --ano YYYY --mes MM
 ```
 
-Executa **Bronze → Silver → Gold → Build Catalog → Validate Catalog**.
+Bronze, Silver e o snapshot Gold+Feature. O catálogo antigo permanece até um `--build-catalog` ou `--catalog-only`.
 
-## Somente catálogo (sem reprocessar dados)
+## Somente catálogo
 
-Regenera o catálogo a partir da Gold existente, sem tocar em Bronze/Silver/Gold:
+Não toca Bronze, Silver nem Gold. Lê a Gold já publicada e reescreve:
 
-```bash
+- `data-lake/catalog/gold_catalog.json`
+- `data-lake/catalog/gold_catalog.csv`
+- `docs/gold_catalog.md`
+
+```powershell
 python -m pipelines.jobs.run_monthly_pipeline --catalog-only
+python -m pipelines.jobs.build_gold_catalog
 ```
 
-Com validação para uma competência específica:
+Com validação de uma competência:
 
-```bash
-python -m pipelines.jobs.run_monthly_pipeline --catalog-only --validate-catalog --ano 2026 --mes 2
+```powershell
+python -m pipelines.jobs.run_monthly_pipeline --catalog-only --validate-catalog --ano YYYY --mes MM
 ```
 
-Executa **Build Catalog → Validate Catalog** para `2026-02`.
+`--catalog-only` ignora `--build-catalog` se os dois vierem juntos. `--validate-catalog` no pipeline completo só age junto de `--build-catalog`. Sem isso, é ignorado.
 
-Use após limpezas manuais, auditorias ou quando a Gold já está atualizada e só o catálogo precisa ser regenerado.
+A validação leve confere se a competência está no catálogo, se há `tabela_resumo`, se não há legado suspeito e se os pares CSV/Parquet do que o catálogo indexa estão coerentes. Erro crítico interrompe. Aviso fica no log.
 
-> `--catalog-only` é modo exclusivo: `--build-catalog` é ignorado se usado junto.
-> `--validate-catalog` sem `--build-catalog` e sem `--catalog-only` continua ignorado no pipeline mensal.
+O catálogo é um arquivo ao lado do snapshot, não uma pasta dentro de `mes=NN`.
+
+---
 
 ## Quando usar cada comando
 
 | Cenário | Comando |
 |---|---|
-| Validar microdados antes do processamento | `--ano YYYY --mes M --validate-bronze-only` |
-| Validar Bronze + Silver sem Gold | `--ano YYYY --mes M --validate-silver-only` |
-| Validar artefatos Gold existentes | `--ano YYYY --mes M --validate-gold-only` |
-| Processar competência nova | `--ano YYYY --mes M` |
-| Processar + atualizar catálogo | `--ano YYYY --mes M --build-catalog` |
-| Processar + catálogo + validação | `--ano YYYY --mes M --build-catalog --validate-catalog` |
-| Gold já pronta, só atualizar catálogo | `--catalog-only` |
-| Catálogo + validar uma competência | `--catalog-only --validate-catalog --ano YYYY --mes M` |
-| Equivalente legado ao catalog-only | `python -m pipelines.jobs.build_gold_catalog` |
+| Mês novo, rotina completa | `.\scripts\monthly_run.ps1 -Ano YYYY -Mes MM` |
+| A mesma rotina num comando Python | `--ano YYYY --mes MM --build-catalog --validate-catalog` |
+| Só publicar, catálogo depois | `--ano YYYY --mes MM` |
+| Auditar o TXT antes | `--ano YYYY --mes MM --validate-bronze-only` |
+| Bronze + Silver, sem Gold | `--ano YYYY --mes MM --validate-silver-only` |
+| Conferir Gold já gravada | `--ano YYYY --mes MM --validate-gold-only` |
+| Gold pronta, só catálogo | `--catalog-only` |
+| Catálogo e validar um mês | `--catalog-only --validate-catalog --ano YYYY --mes MM` |
+| Republicar só a Feature | `python -m pipelines.gold.aggregate_feature_indicators --ano YYYY --mes MM` |
 
-## Validação leve do catálogo
-
-A validação verifica:
-
-- se a competência processada aparece no catálogo;
-- se existe `tabela_resumo` para essa competência;
-- se `suspected_legacy_count` é zero (warning se > 0);
-- se há CSV sem Parquet ou Parquet sem CSV (warning).
-
-Problemas críticos interrompem o job com erro claro. Avisos leves são apenas registrados em log.
-
-## Job isolado de catálogo
-
-```bash
-python -m pipelines.jobs.build_gold_catalog
-```
-
-Equivalente funcional a `--catalog-only`, disponível como módulo dedicado.
-
-## Consulta via API
-
-O catálogo gerado pode ser consultado em:
+## Consulta
 
 ```text
 GET /api/gold/v1/catalog
-GET /api/gold/v1/catalog?ano=2026&mes=2
+GET /api/gold/v1/competencias
 ```
 
-Veja também `docs/gold_catalog.md` para a documentação humana da camada Gold.
+`/competencias` lista pastas Gold válidas. `/catalog` lê o JSON. Os dois podem divergir até o catálogo ser regenerado.
 
-A API FastAPI **prefere ler artefatos Parquet** da Gold (`pd.read_parquet`) e usa **CSV como fallback** se o Parquet estiver ausente ou ilegível. O pipeline continua gerando CSV + Parquet; os contratos JSON dos endpoints permanecem iguais.
+A API prefere Parquet e usa CSV se o Parquet não existir ou não puder ser lido. `tabela_municipio_ocupacao` é só Parquet.
